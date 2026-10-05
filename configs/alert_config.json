@@ -1,0 +1,31 @@
+{
+  "system": "DownhillAlertPropagationSystem",
+  "thresholds": {
+    "elevated_station_min_elevation_m": 2000.0,
+    "elevated_station_min_risk_trigger": 0.65,
+    "downhill_min_alert_strength_to_warn": 0.35,
+    "downhill_warning_lead_time_min_minutes": 15,
+    "downhill_warning_lead_time_max_minutes": 180
+  },
+  "baseline_v0_circular_buffer": {
+    "method_name": "circular_buffer",
+    "radius_km": 25.0,
+    "decay_with_distance": false,
+    "terrain_aware": false
+  },
+  "method_v1_dem_flow_routing": {
+    "method_name": "dem_flow_routing",
+    "flow_routing_model": "D8_steepest_descent",
+    "flow_decay_alpha": 0.08,
+    "accumulation_boost_beta": 0.15,
+    "hydraulic_wave_speed_m_per_s": 2.2,
+    "max_downstream_distance_km": 60.0,
+    "max_steps": 120,
+    "convergence_with_confluences": true
+  },
+  "logging": {
+    "log_every_alert": true,
+    "record_flow_path_coordinates": true,
+    "record_lead_time_minutes": true
+  }
+}
