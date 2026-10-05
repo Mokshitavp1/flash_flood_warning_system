@@ -1,0 +1,63 @@
+{
+  "model_name": "MultimodalFlashFloodWarningNet",
+  "version": "1.0",
+  "satellite_branch": {
+    "num_timesteps": 9,
+    "patch_channels": 3,
+    "patch_height": 32,
+    "patch_width": 32,
+    "cnn_channels": [16, 32, 64],
+    "frame_embedding_dim": 64,
+    "temporal_encoder_type": "lstm",
+    "temporal_hidden_dim": 64,
+    "temporal_num_layers": 2,
+    "missing_frame_masking": {
+      "enabled": true,
+      "method": "attention_key_padding_mask",
+      "zero_imputation_prohibited": true
+    }
+  },
+  "tabular_branch": {
+    "features": [
+      "precipitation_1h",
+      "precipitation_3h",
+      "precipitation_6h",
+      "temperature",
+      "dew_point",
+      "relative_humidity",
+      "station_pressure",
+      "wind_speed"
+    ],
+    "input_dim": 8,
+    "sequence_length": 6,
+    "rnn_hidden_dim": 32,
+    "rnn_num_layers": 1
+  },
+  "terrain_branch": {
+    "features": [
+      "elevation_m",
+      "slope_degrees",
+      "aspect_degrees",
+      "flow_accumulation_log",
+      "downstream_distance_to_stream_km"
+    ],
+    "input_dim": 5,
+    "mlp_hidden_dims": [32, 16]
+  },
+  "fusion_head": {
+    "fusion_hidden_dims": [64, 32],
+    "dropout": 0.25,
+    "output_dim": 1,
+    "activation": "sigmoid"
+  },
+  "training": {
+    "loss": "focal_loss",
+    "focal_alpha": 0.75,
+    "focal_gamma": 2.0,
+    "pos_weight": 8.0,
+    "learning_rate": 0.001,
+    "batch_size": 32,
+    "epochs": 20,
+    "early_stopping_patience": 5
+  }
+}
