@@ -1,0 +1,6 @@
+{
+  "name": "HydroAlert: Station-Anchored Flash-Flood Early Warning System",
+  "description": "Multimodal flash-flood warning system combining NOAA GHCN-hourly ground data, per-station satellite trajectories with missing-frame masking, and DEM flow-routing for downhill alert propagation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
