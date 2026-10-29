@@ -285,7 +285,11 @@ class FlashFloodPipelineRunner:
         print(f"Baselines: Rainfall Threshold (>25mm/h) & NOAA Flash Flood Guidance (FFG)")
         print(f"Ablation: Tabular -> +Terrain -> +Satellite Trajectory -> +DEM Flow Routing")
 
-        harness = AblationHarness(model=self.model, dem_pipeline=self.dem_pipeline)
+        harness = AblationHarness(
+            model=self.model,
+            dem_pipeline=self.dem_pipeline,
+            rainfall_thresholds_mm=self.pipeline_config["baselines"]["rainfall_thresholds_mm"],
+        )
         results = harness.run_all_stages(dataset.samples, stations_meta=stations)
 
         # Print formatted comparison table

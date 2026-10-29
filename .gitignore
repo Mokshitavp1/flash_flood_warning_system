@@ -2,7 +2,14 @@ node_modules/
 build/
 dist/
 coverage/
+__pycache__/
+*.pyc
 .DS_Store
 *.log
 .env*
 !.env.example
+
+# Raw observational and satellite payloads stay outside version control.
+data/*
+!data/README.md
+!data/stations.csv

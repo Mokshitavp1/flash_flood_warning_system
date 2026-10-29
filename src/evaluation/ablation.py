@@ -55,10 +55,12 @@ class AblationHarness:
         model: MultimodalFlashFloodNet,
         dem_pipeline: DEMPipeline,
         risk_threshold: float = 0.50,
+        rainfall_thresholds_mm: Optional[Dict[str, float]] = None,
     ):
         self.model = model
         self.dem_pipeline = dem_pipeline
         self.risk_threshold = risk_threshold
+        self.rainfall_thresholds_mm = rainfall_thresholds_mm or {"one_hour": 25.0, "three_hour": 45.0, "six_hour": 60.0}
 
     def run_all_stages(
         self,
@@ -70,11 +72,15 @@ class AblationHarness:
         results: Dict[str, AblationStageResult] = {}
 
         # Baseline A: Rainfall Threshold
-        base_rain = BaselineRainfallThreshold()
+        base_rain = BaselineRainfallThreshold(
+            threshold_1h_mm=self.rainfall_thresholds_mm["one_hour"],
+            threshold_3h_mm=self.rainfall_thresholds_mm["three_hour"],
+            threshold_6h_mm=self.rainfall_thresholds_mm["six_hour"],
+        )
         rain_metrics = base_rain.evaluate(test_samples)
         results["baseline_rainfall"] = AblationStageResult(
             stage_id="baseline_a",
-            stage_name="Rainfall Threshold Baseline (>25mm/h)",
+            stage_name="Rainfall Threshold Baseline (configured 1h/3h/6h)",
             description="Naive alert solely based on local precipitation gauge readings.",
             metrics=rain_metrics,
             csi=rain_metrics.csi,

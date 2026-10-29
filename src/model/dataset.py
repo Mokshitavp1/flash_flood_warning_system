@@ -37,6 +37,7 @@ class MultimodalEventSample:
     # 1 means precipitation was missing and its numeric value was imputed to 0.
     # This is a mask, not a model feature.
     precipitation_missing_mask: List[int] = field(default_factory=list)
+    rainfall_6h_mm: float = 0.0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -141,6 +142,7 @@ class StationAnchoredFloodDataset:
             target_flood_label=flood_label,
             rainfall_1h_mm=observation.precipitation_1h_mm or 0.0,
             rainfall_3h_mm=observation.precipitation_3h_mm or 0.0,
+            rainfall_6h_mm=observation.precipitation_6h_mm or 0.0,
             elevation_m=station_meta.elevation_m,
             is_elevated_terrain=terrain.is_elevated_terrain,
         )

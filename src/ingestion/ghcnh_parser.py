@@ -79,7 +79,7 @@ class GHCNhObservation:
     precipitation_6h_mm: Optional[float]
     present_weather: str
     quality_flag: str
-    visibility_m: Optional[float] = None
+    visibility_km: Optional[float] = None
     # True only when the selected hourly report had no precipitation value.
     # The numeric precipitation fields remain None here; consumers may impute
     # zero only together with this flag.
@@ -108,6 +108,7 @@ class GHCNhParser:
     _WX_INTENSITY = frozenset(("+", "-"))
     _WX_DESCRIPTORS = ("SH", "TS", "FZ", "BL", "DR")
     _WX_PRECIP_PHENOMENA = ("RA", "DZ", "SN", "SG", "IC", "PL", "GR", "GS", "UP")
+    _SENSOR_DOWN_PRECIP_CODES = frozenset(("M", "S", "X"))
 
     @classmethod
     def weather_has_station_precipitation(cls, weather: str) -> bool:
@@ -234,7 +235,9 @@ class GHCNhParser:
         precip_1h_col = find_col("precipitation_1_hour", "precip_1h")
         precip_3h_col = find_col("precipitation_3_hour", "precip_3h")
         precip_6h_col = find_col("precipitation_6_hour", "precip_6h")
+        precip_measurement_col = find_col("precipitation_measurement_code", "precip_measurement_code")
         wx_col = find_col("present_weather", "weather", "pres_wx_mw1")
+        wx_au1_col = find_col("pres_wx_au1")
         qc_col = find_col("quality_flag", "qc_flag", "flag")
 
         # Time columns
@@ -328,11 +331,25 @@ class GHCNhParser:
             p_3h = self._parse_float(get_val(row, precip_3h_col))
             p_6h = self._parse_float(get_val(row, precip_6h_col))
             wx = get_val(row, wx_col) or ""
+            wx_au1 = get_val(row, wx_au1_col) or ""
+            precip_measurement_code = (get_val(row, precip_measurement_col) or "").upper()
 
             # The one-hour value is the modelled hourly measurement.  Preserve
             # missingness rather than silently converting it to a dry hour.
             if p_1h is None and precip is not None:
                 p_1h = precip
+            # A blank gauge value is an observed dry hour unless weather at the
+            # station reports precipitation or the station explicitly marks the
+            # precipitation sensor unavailable.  A blank measurement-code cell
+            # alone is not evidence of a failed sensor.
+            has_precipitation_weather = self.weather_has_station_precipitation(f"{wx_au1} {wx}")
+            sensor_is_down = precip_measurement_code in self._SENSOR_DOWN_PRECIP_CODES
+            precip_missing = p_1h is None and (
+                has_precipitation_weather or sensor_is_down
+            )
+            if p_1h is None and not has_precipitation_weather and not sensor_is_down:
+                p_1h = 0.0
+                precip_missing = False
 
             obs = GHCNhObservation(
                 station_id=station_id,
@@ -350,14 +367,14 @@ class GHCNhParser:
                 relative_humidity=rh,
                 wind_direction_deg=wdir,
                 wind_speed_mps=wspd,
-                visibility_m=visibility,
+                visibility_km=visibility,
                 station_pressure_hpa=stn_p,
                 sea_level_pressure_hpa=slp,
                 precipitation_mm=precip,
                 precipitation_1h_mm=p_1h,
                 precipitation_3h_mm=p_3h,
                 precipitation_6h_mm=p_6h,
-                precip_missing=p_1h is None,
+                precip_missing=precip_missing,
                 present_weather=wx,
                 quality_flag=qc,
             )
@@ -391,10 +408,18 @@ class GHCNhParser:
 
         hourly_records: List[GHCNhObservation] = []
         for (y, m, d, h), bucket in sorted(hourly_buckets.items()):
-            # NOAA reports can arrive multiple times per hour.  Use the latest
-            # report, consistently for precipitation and every companion field;
-            # max() would turn a later correction into a false accumulation.
-            best = max(bucket, key=lambda o: (o.minute, o.timestamp))
+            # NOAA reports can arrive multiple times per hour.  Prefer an
+            # explicitly reported precipitation value, then a report that
+            # indicates precipitation weather, over generated dry values.
+            reported_precip = [
+                obs for obs in bucket
+                if obs.precipitation_mm is not None or obs.precipitation_1h_mm not in (None, 0.0)
+            ]
+            missing_precip = [obs for obs in bucket if obs.precip_missing]
+            best = max(
+                reported_precip or missing_precip or bucket,
+                key=lambda o: (o.minute, o.timestamp),
+            )
 
             # Construct clean hourly record
             clean_rec = GHCNhObservation(
@@ -413,7 +438,7 @@ class GHCNhParser:
                 relative_humidity=best.relative_humidity,
                 wind_direction_deg=best.wind_direction_deg,
                 wind_speed_mps=best.wind_speed_mps,
-                visibility_m=best.visibility_m,
+                visibility_km=best.visibility_km,
                 station_pressure_hpa=best.station_pressure_hpa,
                 sea_level_pressure_hpa=best.sea_level_pressure_hpa,
                 precipitation_mm=best.precipitation_mm,

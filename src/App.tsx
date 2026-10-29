@@ -91,17 +91,21 @@ export default function App() {
       setParsedPsvOutput({ error: 'Invalid GHCNh format. Expected at least 25 pipe-separated columns.' });
       return;
     }
+    const parseOptionalNumber = (value: string): number | null => {
+      const parsed = Number.parseFloat(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
     setParsedPsvOutput({
       stationId: parts[0],
       stationName: parts[1],
-      latitude: parseFloat(parts[2]),
-      longitude: parseFloat(parts[3]),
-      elevationM: parseFloat(parts[4]),
+      latitude: parseOptionalNumber(parts[2]),
+      longitude: parseOptionalNumber(parts[3]),
+      elevationM: parseOptionalNumber(parts[4]),
       date: `${parts[5]}-${parts[6].padStart(2, '0')}-${parts[7].padStart(2, '0')} ${parts[8].padStart(2, '0')}:${parts[9].padStart(2, '0')} UTC`,
-      temperatureC: parseFloat(parts[10]),
-      relativeHumidity: parseFloat(parts[12]),
-      stationPressureHpa: parseFloat(parts[16]),
-      precipitation1hMm: parseFloat(parts[19]),
+      temperatureC: parseOptionalNumber(parts[10]),
+      relativeHumidity: parseOptionalNumber(parts[12]),
+      stationPressureHpa: parseOptionalNumber(parts[16]),
+      precipitation1hMm: parseOptionalNumber(parts[19]),
       weatherCode: parts[23] || 'None',
       qcFlag: parts[24] || 'V',
     });
@@ -730,11 +734,11 @@ export default function App() {
                     </div>
                     <div>
                       <span className="text-[#766153] block text-[10px]">Elevation</span>
-                      <strong className="text-[#373D20]">{parsedPsvOutput.elevationM} m</strong>
+                      <strong className="text-[#373D20]">{parsedPsvOutput.elevationM ?? 'Missing'} m</strong>
                     </div>
                     <div>
                       <span className="text-[#766153] block text-[10px]">Precipitation (1h)</span>
-                      <strong className="text-[#373D20]">{parsedPsvOutput.precipitation1hMm} mm</strong>
+                      <strong className="text-[#373D20]">{parsedPsvOutput.precipitation1hMm ?? 'Missing'} mm</strong>
                     </div>
                     <div>
                       <span className="text-[#766153] block text-[10px]">Quality Flag</span>

@@ -1,7 +1,7 @@
 """Operational Benchmark Baselines for Flash-Flood Warning Comparison.
 
 Implements Functional Requirements:
-- FR6.1: Rainfall-threshold-only baseline (e.g. >25 mm/h or >45 mm/3h).
+- FR6.1: Configured rainfall-threshold-only baseline.
 - FR6.2: NOAA Flash Flood Guidance (FFG) baseline.
 """
 
@@ -17,21 +17,23 @@ class BaselineRainfallThreshold:
     """
     FR6.1: Rainfall-threshold-only baseline.
     Triggers an alert solely when local ground station rainfall exceeds fixed thresholds:
-    - 1-hour rainfall >= 25.0 mm OR
-    - 3-hour rainfall >= 45.0 mm
+    - 1-hour, 3-hour, or 6-hour rainfall exceeds its configured threshold.
     
     LIMITATION: Completely blindsided by flash floods in downhill communities
     where local rainfall is 0.0 mm but floodwaters rush down from uphill peaks!
     """
 
-    def __init__(self, threshold_1h_mm: float = 25.0, threshold_3h_mm: float = 45.0):
+    def __init__(self, threshold_1h_mm: float = 25.0, threshold_3h_mm: float = 45.0, threshold_6h_mm: float = 60.0):
         self.threshold_1h_mm = threshold_1h_mm
         self.threshold_3h_mm = threshold_3h_mm
+        self.threshold_6h_mm = threshold_6h_mm
 
     def predict(self, sample: MultimodalEventSample) -> int:
         if sample.rainfall_1h_mm >= self.threshold_1h_mm:
             return 1
         if sample.rainfall_3h_mm >= self.threshold_3h_mm:
+            return 1
+        if sample.rainfall_6h_mm >= self.threshold_6h_mm:
             return 1
         return 0
 

@@ -85,6 +85,13 @@ Or specify a custom data directory:
 python3 run_pipeline.py /path/to/my/ghcnh_psv_files/
 ```
 
+### Rainfall Baseline Thresholds
+
+The rainfall-only benchmark uses configured 1-hour, 3-hour, and 6-hour
+thresholds in `configs/pipeline_config.json`. These thresholds have not been
+tuned on the July 2025 Kerrville event and must not be treated as calibrated
+operational guidance.
+
 ### Option B: Stage-by-Stage Python Execution
 ```python
 from src.pipeline_runner import FlashFloodPipelineRunner

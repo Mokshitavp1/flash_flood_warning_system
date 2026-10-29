@@ -14,6 +14,9 @@ from pathlib import Path
 
 from src.ingestion.ghcnh_parser import GHCNhParser
 from src.ingestion.mock_ghcnh_generator import MockGHCNhGenerator
+from src.model.dataset import StationAnchoredFloodDataset
+from src.terrain.dem_pipeline import StationTerrainFeatures
+from src.trajectory.trajectory_builder import SatelliteTrajectorySequence
 
 
 class TestGHCNhIngestion(unittest.TestCase):
@@ -119,6 +122,40 @@ class TestGHCNhIngestion(unittest.TestCase):
         self.assertEqual(by_hour[2].precipitation_3h_mm, 3.0)
         self.assertIsNone(by_hour[4].precipitation_3h_mm)
         self.assertIsNone(by_hour[6].precipitation_6h_mm)
+
+    def test_real_hour_uses_last_report_with_precipitation(self):
+        """San Antonio 2025-01-04T13 has a 13:51 0.0 gauge report, then blanks."""
+        data_path = Path("data/GHCNh_USW00012921_2025.psv")
+        if not data_path.exists():
+            self.skipTest("Real-station audit input is not available")
+        _, observations = self.parser.parse_file(data_path)
+        hour = next(obs for obs in observations if obs.timestamp.startswith("2025-01-04T13"))
+        self.assertEqual(hour.precipitation_1h_mm, 0.0)
+        self.assertFalse(hour.precip_missing)
+        self.assertEqual(hour.temperature_c, 16.1)
+        self.assertEqual(hour.minute, 0)
+
+    def test_dataset_mask_distinguishes_dry_and_missing_precipitation(self):
+        header = "station_id|latitude|longitude|elevation|year|month|day|hour|minute|precipitation_1_hour\n"
+        rows = "TEST|1|2|3|2025|01|01|00|00|0.0\nTEST|1|2|3|2025|01|01|01|00|\n"
+        meta, observations = self.parser.parse_content(header + rows)
+        trajectory = SatelliteTrajectorySequence(
+            station_id="TEST", event_id="event", event_timestamp_utc=observations[-1].timestamp,
+            latitude=1.0, longitude=2.0, timesteps_minutes=[], frames_data=[], valid_mask=[],
+            frame_statuses=[], coverage_rate=0.0,
+        )
+        terrain = StationTerrainFeatures("TEST", 1.0, 2.0, 3.0, 0.0, 0.0, 0, 0, 0.0, 0.0, False)
+        sample = StationAnchoredFloodDataset.create_sample(
+            meta, observations[-1], observations, trajectory, terrain
+        )
+        self.assertEqual(sample.tabular_features[-2][0], 0.0)  # observed dry hour
+        self.assertEqual(sample.precipitation_missing_mask[-2:], [0, 0])
+
+    def test_blank_precipitation_without_weather_is_dry(self):
+        header = "station_id|latitude|longitude|elevation|year|month|day|hour|minute|precipitation|present_weather\n"
+        _, observations = self.parser.parse_content("TEST|1|2|3|2025|01|01|00|00||\n".join([header, ""]))
+        self.assertEqual(observations[0].precipitation_1h_mm, 0.0)
+        self.assertFalse(observations[0].precip_missing)
 
 
 if __name__ == "__main__":

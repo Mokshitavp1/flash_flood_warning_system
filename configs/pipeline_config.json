@@ -36,6 +36,13 @@
     "flow_routing_algorithm": "D8",
     "flow_accumulation_threshold_km2": 5.0
   },
+  "baselines": {
+    "rainfall_thresholds_mm": {
+      "one_hour": 25.0,
+      "three_hour": 45.0,
+      "six_hour": 60.0
+    }
+  },
   "data_paths": {
     "raw_ghcnh_dir": "data",
     "processed_dir": "outputs/processed",
