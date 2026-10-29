@@ -23,6 +23,12 @@ from src.alerts.alert_logger import AlertLogger
 from src.alerts.circular_buffer import CircularBufferAlertEngine
 from src.alerts.flow_routing_alert import DEMFlowRoutingAlertEngine
 from src.evaluation.ablation import AblationHarness
+from src.evaluation.label_evaluation import (
+    evaluate_labeled_samples,
+    labeled_sample_target,
+    load_flood_labels,
+    print_label_evaluation_table,
+)
 from src.evaluation.metrics import BinaryClassificationMetrics
 from src.ingestion.ghcnh_parser import GHCNhObservation, GHCNhParser, StationMetadata
 from src.ingestion.mock_ghcnh_generator import MockGHCNhGenerator
@@ -53,6 +59,11 @@ class FlashFloodPipelineRunner:
         self.manifest_path = Path(self.pipeline_config["data_paths"]["manifest_path"])
         self.alerts_dir = Path(self.pipeline_config["data_paths"]["alerts_dir"])
         self.evaluation_dir = Path(self.pipeline_config["data_paths"]["evaluation_dir"])
+        self.labels_path = Path(
+            self.pipeline_config["data_paths"].get(
+                "labels_path", "data/labels/flood_labels_2025-07-03_2025-07-05.csv"
+            )
+        )
 
         # Core pipeline components
         self.parser = GHCNhParser()
@@ -182,7 +193,20 @@ class FlashFloodPipelineRunner:
         print(f"Branches: Satellite Trajectory (Masked Attention) + Tabular Weather + Terrain MLP")
 
         dataset = StationAnchoredFloodDataset()
+        labels = load_flood_labels(self.labels_path) if self.labels_path.exists() else {}
+        use_event_labels = bool(labels) and any(
+            meta.station_id == "USW00012961" for meta, _, _, _ in events
+        )
         for meta, obs, history, traj in events:
+            label_target = (
+                labeled_sample_target(labels, meta.station_id, obs.timestamp)
+                if use_event_labels
+                else None
+            )
+            if use_event_labels and (
+                meta.station_id != "USW00012961" or label_target is None
+            ):
+                continue
             terrain = self.dem_pipeline.extract_station_terrain(meta)
             sample = StationAnchoredFloodDataset.create_sample(
                 station_meta=meta,
@@ -190,6 +214,7 @@ class FlashFloodPipelineRunner:
                 historical_obs=history,
                 trajectory=traj,
                 terrain=terrain,
+                flood_label=label_target,
             )
             dataset.add_sample(sample)
 
@@ -291,6 +316,16 @@ class FlashFloodPipelineRunner:
             rainfall_thresholds_mm=self.pipeline_config["baselines"]["rainfall_thresholds_mm"],
         )
         results = harness.run_all_stages(dataset.samples, stations_meta=stations)
+
+        if self.labels_path.exists():
+            labels = load_flood_labels(self.labels_path)
+            label_results = evaluate_labeled_samples(
+                dataset.samples,
+                [self.model.predict_sample(sample) for sample in dataset.samples],
+                labels,
+                self.pipeline_config["baselines"]["rainfall_thresholds_mm"],
+            )
+            print_label_evaluation_table(label_results)
 
         # Print formatted comparison table
         print("\n" + "=" * 95)

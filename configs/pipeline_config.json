@@ -51,5 +51,6 @@
     "manifest_path": "outputs/manifests/satellite_trajectory_manifest.csv",
     "alerts_dir": "outputs/alerts",
     "evaluation_dir": "outputs/evaluation"
+    ,"labels_path": "data/labels/flood_labels_2025-07-03_2025-07-05.csv"
   }
 }
