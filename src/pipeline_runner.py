@@ -108,8 +108,38 @@ class FlashFloodPipelineRunner:
             print(f"[Stage 1] Created {len(mock_files)} synthetic GHCNh PSV files in {temp_mock_dir}")
             ingested = self.parser.ingest_directory(temp_mock_dir)
 
+        start_time = datetime.fromisoformat(
+            self.pipeline_config["time_range"]["start_date"].replace("Z", "+00:00")
+        )
+        end_time = datetime.fromisoformat(
+            self.pipeline_config["time_range"]["end_date"].replace("Z", "+00:00")
+        )
+        filtered_ingested: Dict[str, Tuple[StationMetadata, List[GHCNhObservation]]] = {}
+        for st_id, (meta, observations) in ingested.items():
+            filtered_observations = []
+            for observation in observations:
+                observation_time = datetime.fromisoformat(
+                    observation.timestamp.replace("Z", "+00:00")
+                )
+                if start_time <= observation_time <= end_time:
+                    filtered_observations.append(observation)
+            if filtered_observations:
+                filtered_ingested[st_id] = (meta, filtered_observations)
+        if filtered_ingested:
+            ingested = filtered_ingested
+        else:
+            print(
+                "[Stage 1] Warning: no observations fall inside the configured "
+                "window; retaining the supplied records for this run."
+            )
+
         total_obs = sum(len(obs) for _, obs in ingested.values())
         print(f"[Stage 1] Successfully parsed and cleaned:")
+        print(
+            f"[Stage 1] Using configured window: "
+            f"{self.pipeline_config['time_range']['start_date']} to "
+            f"{self.pipeline_config['time_range']['end_date']}"
+        )
         for st_id, (meta, obs_list) in ingested.items():
             print(f"  - Station {st_id} ({meta.station_name}): {len(obs_list)} hourly observations, Elev: {meta.elevation_m}m")
         print(f"[Stage 1] Total cleaned hourly records: {total_obs}")

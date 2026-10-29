@@ -85,6 +85,20 @@ Or specify a custom data directory:
 python3 run_pipeline.py /path/to/my/ghcnh_psv_files/
 ```
 
+### Local Demo (July 3–5, 2025)
+
+The checked-in GHCNh files cover the July 2025 demonstration window. The
+configured time window prevents the runner from processing the full year of
+observations, so this command completes in a bounded amount of time:
+
+```bash
+python run_pipeline.py data
+```
+
+It prints the six pipeline stages, satellite-frame coverage and NFR1 result,
+terrain features, the warning/rainfall/model evaluation table, and writes
+artifacts under `outputs/`.
+
 ### Rainfall Baseline Thresholds
 
 The rainfall-only benchmark uses configured 1-hour, 3-hour, and 6-hour
@@ -157,6 +171,19 @@ No parameters are hardcoded. Modify settings in `configs/`:
 ---
 
 ## 7. Interactive Web Dashboard
+
+Install and build the dashboard from the repository root:
+
+```bash
+npm install
+npm run dev
+```
+
+Open the displayed local Vite URL (normally `http://localhost:5173`). The
+dashboard is a self-contained demonstration UI using the mock station,
+trajectory, alert, and ablation data in `src/data/mockPipelineData.ts`; it
+does not call the Python pipeline. Use `npm run build` to verify a production
+bundle.
 
 In addition to the Python CLI pipeline, an interactive dashboard runs in the AI Studio preview environment:
 - **Terrain & Watershed Map:** Visualizes mountain stations, downhill valley communities, and D8 flow descent paths.
