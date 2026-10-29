@@ -120,6 +120,15 @@ ablation_results = runner.run_stage_6_evaluation(dataset, stations)
 
 ---
 
+### Rainfall baseline event check
+
+The rainfall baseline is a configured set of thresholds in
+`configs/pipeline_config.json`: 25.0 mm for 1 hour, 45.0 mm for 3 hours, and
+60.0 mm for 6 hours. These thresholds were not tuned on the July 2025 event.
+They revert the earlier single 15 mm/h change. On July 4, 2025, none of the
+three thresholds fired at Kerrville; relative to the USGS gauge onset at
+08:00Z, the 1-hour, 3-hour, and 6-hour thresholds all had no firing hour.
+
 ## 5. Running the Test Suite (Including NFR1 Verification)
 
 Execute all unit and integration tests with the test runner:
