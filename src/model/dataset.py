@@ -7,7 +7,7 @@ and static terrain features into aligned training samples.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.ingestion.ghcnh_parser import GHCNhObservation, StationMetadata
@@ -34,6 +34,9 @@ class MultimodalEventSample:
     rainfall_3h_mm: float
     elevation_m: float
     is_elevated_terrain: bool
+    # 1 means precipitation was missing and its numeric value was imputed to 0.
+    # This is a mask, not a model feature.
+    precipitation_missing_mask: List[int] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -42,6 +45,7 @@ class MultimodalEventSample:
             "timestamp_utc": self.timestamp_utc,
             "trajectory_mask": self.trajectory_mask,
             "tabular_shape": [len(self.tabular_features), len(self.tabular_features[0]) if self.tabular_features else 0],
+            "precipitation_missing_mask": self.precipitation_missing_mask,
             "terrain_features": self.terrain_features,
             "target_flood_label": self.target_flood_label,
             "rainfall_1h_mm": self.rainfall_1h_mm,
@@ -81,6 +85,7 @@ class StationAnchoredFloodDataset:
         # Normalize variables: precip (0-100mm), temp (-20 to 50C), rh (0-100), pressure (800-1050), wind (0-40)
         recent = historical_obs[-6:] if len(historical_obs) >= 6 else historical_obs
         tabular_seq: List[List[float]] = []
+        precip_missing_mask: List[int] = []
 
         for obs in recent:
             p1 = (obs.precipitation_1h_mm or 0.0) / 50.0
@@ -97,10 +102,13 @@ class StationAnchoredFloodDataset:
                 round(stn_p, 4),
                 round(wspd, 4),
             ])
+            precip_missing_mask.append(int(obs.precip_missing))
 
         # Pad tabular sequence to length 6 if needed
         while len(tabular_seq) < 6:
             tabular_seq.insert(0, [0.0, 0.0, 0.5, 0.5, 0.5, 0.1])
+            # Padding has no observed precipitation value, so it is masked.
+            precip_missing_mask.insert(0, 1)
 
         # 2. Terrain features
         terr_vec = terrain.to_feature_vector()
@@ -128,6 +136,7 @@ class StationAnchoredFloodDataset:
             trajectory_patches=trajectory.frames_data,
             trajectory_mask=trajectory.valid_mask,
             tabular_features=tabular_seq,
+            precipitation_missing_mask=precip_missing_mask,
             terrain_features=terr_vec,
             target_flood_label=flood_label,
             rainfall_1h_mm=observation.precipitation_1h_mm or 0.0,

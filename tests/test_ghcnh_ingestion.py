@@ -50,6 +50,7 @@ class TestGHCNhIngestion(unittest.TestCase):
         self.assertEqual(obs[2].temperature_c, 22.4)
         # Check rolling accumulation
         self.assertAlmostEqual(obs[2].precipitation_3h_mm, 34.8, places=1)
+        self.assertFalse(obs[0].precip_missing)
 
     def test_missing_sentinels_cleaned_to_none(self):
         """Verifies that -999.9, -9999, NA are cleaned and do not corrupt calculations."""
@@ -85,6 +86,39 @@ class TestGHCNhIngestion(unittest.TestCase):
         # The row with Q should be discarded!
         self.assertEqual(len(obs), 1)
         self.assertEqual(obs[0].hour, 14)
+
+    def test_present_weather_token_parsing(self):
+        """Intensity/descriptors are stripped, while vicinity groups stay excluded."""
+        for token in ("SHRA", "-SHRA", "TSRA", "TSGR", "+FZDZ", "SN"):
+            with self.subTest(token=token):
+                self.assertTrue(self.parser.weather_has_station_precipitation(token))
+        for token in ("VCTS", "VCSH", "BR", "FG"):
+            with self.subTest(token=token):
+                self.assertFalse(self.parser.weather_has_station_precipitation(token))
+
+    def test_last_report_missingness_and_timestamp_windows(self):
+        header = (
+            "station_id|latitude|longitude|elevation|year|month|day|hour|minute|"
+            "precipitation_1_hour|present_weather\n"
+        )
+        rows = (
+            "TEST|1|2|3|2025|01|01|00|55|0.0|\n"  # dry, but insufficient history
+            "TEST|1|2|3|2025|01|01|01|55|1.0|RA\n"
+            "TEST|1|2|3|2025|01|01|02|15|9.0|RA\n"  # superseded by later report
+            "TEST|1|2|3|2025|01|01|02|55|2.0|RA\n"
+            "TEST|1|2|3|2025|01|01|04|55||TSRA\n"  # 03:00 is absent; 04 is missing
+            "TEST|1|2|3|2025|01|01|05|55|0.0|\n"
+            "TEST|1|2|3|2025|01|01|06|55|0.0|\n"
+        )
+        _, obs = self.parser.parse_content(header + rows)
+        by_hour = {item.hour: item for item in obs}
+        self.assertEqual(by_hour[2].precipitation_1h_mm, 2.0)
+        self.assertFalse(by_hour[0].precip_missing)
+        self.assertTrue(by_hour[4].precip_missing)
+        self.assertIsNone(by_hour[0].precipitation_3h_mm)
+        self.assertEqual(by_hour[2].precipitation_3h_mm, 3.0)
+        self.assertIsNone(by_hour[4].precipitation_3h_mm)
+        self.assertIsNone(by_hour[6].precipitation_6h_mm)
 
 
 if __name__ == "__main__":

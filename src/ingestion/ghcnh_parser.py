@@ -14,9 +14,8 @@ import gzip
 import io
 import math
 import os
-import re
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -80,6 +79,11 @@ class GHCNhObservation:
     precipitation_6h_mm: Optional[float]
     present_weather: str
     quality_flag: str
+    visibility_m: Optional[float] = None
+    # True only when the selected hourly report had no precipitation value.
+    # The numeric precipitation fields remain None here; consumers may impute
+    # zero only together with this flag.
+    precip_missing: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -100,6 +104,37 @@ class GHCNhParser:
         """
         self.reject_qc_flags = set(reject_qc_flags or ["Q", "X", "M"])
         self.precipitation_fill = precipitation_fill
+
+    _WX_INTENSITY = frozenset(("+", "-"))
+    _WX_DESCRIPTORS = ("SH", "TS", "FZ", "BL", "DR")
+    _WX_PRECIP_PHENOMENA = ("RA", "DZ", "SN", "SG", "IC", "PL", "GR", "GS", "UP")
+
+    @classmethod
+    def weather_has_station_precipitation(cls, weather: str) -> bool:
+        """Whether any present-weather token reports precipitation at the station.
+
+        METAR vicinity groups (for example ``VCTS``) describe weather near, but
+        not at, the station and are deliberately excluded.
+        """
+        for token in weather.upper().split():
+            if token.startswith("VC"):
+                continue
+            if token[:1] in cls._WX_INTENSITY:
+                token = token[1:]
+            # Descriptors can precede a precipitation phenomenon (SHRA, TSRA).
+            # Remove all recognized leading descriptors before examining the
+            # remaining phenomenon groups.
+            descriptor_removed = True
+            while descriptor_removed:
+                descriptor_removed = False
+                for descriptor in cls._WX_DESCRIPTORS:
+                    if token.startswith(descriptor):
+                        token = token[len(descriptor):]
+                        descriptor_removed = True
+                        break
+            if any(token.startswith(phenomenon) for phenomenon in cls._WX_PRECIP_PHENOMENA):
+                return True
+        return False
 
     @staticmethod
     def _parse_float(val: Optional[str]) -> Optional[float]:
@@ -192,13 +227,14 @@ class GHCNhParser:
         rh_col = find_col("relative_humidity", "rh")
         wdir_col = find_col("wind_direction", "wind_dir")
         wspd_col = find_col("wind_speed", "wind_spd")
+        visibility_col = find_col("visibility", "vis")
         stn_pres_col = find_col("station_level_pressure", "station_pressure")
         slp_col = find_col("sea_level_pressure", "sea_pressure")
         precip_col = find_col("precipitation", "precip")
         precip_1h_col = find_col("precipitation_1_hour", "precip_1h")
         precip_3h_col = find_col("precipitation_3_hour", "precip_3h")
         precip_6h_col = find_col("precipitation_6_hour", "precip_6h")
-        wx_col = find_col("present_weather", "weather")
+        wx_col = find_col("present_weather", "weather", "pres_wx_mw1")
         qc_col = find_col("quality_flag", "qc_flag", "flag")
 
         # Time columns
@@ -283,6 +319,7 @@ class GHCNhParser:
             rh = self._parse_float(get_val(row, rh_col))
             wdir = self._parse_int(get_val(row, wdir_col))
             wspd = self._parse_float(get_val(row, wspd_col))
+            visibility = self._parse_float(get_val(row, visibility_col))
             stn_p = self._parse_float(get_val(row, stn_pres_col))
             slp = self._parse_float(get_val(row, slp_col))
 
@@ -292,11 +329,10 @@ class GHCNhParser:
             p_6h = self._parse_float(get_val(row, precip_6h_col))
             wx = get_val(row, wx_col) or ""
 
-            # Standardize precipitation
+            # The one-hour value is the modelled hourly measurement.  Preserve
+            # missingness rather than silently converting it to a dry hour.
             if p_1h is None and precip is not None:
                 p_1h = precip
-            elif p_1h is None and precip is None:
-                p_1h = self.precipitation_fill
 
             obs = GHCNhObservation(
                 station_id=station_id,
@@ -314,12 +350,14 @@ class GHCNhParser:
                 relative_humidity=rh,
                 wind_direction_deg=wdir,
                 wind_speed_mps=wspd,
+                visibility_m=visibility,
                 station_pressure_hpa=stn_p,
                 sea_level_pressure_hpa=slp,
-                precipitation_mm=precip or 0.0,
-                precipitation_1h_mm=p_1h or 0.0,
+                precipitation_mm=precip,
+                precipitation_1h_mm=p_1h,
                 precipitation_3h_mm=p_3h,
                 precipitation_6h_mm=p_6h,
+                precip_missing=p_1h is None,
                 present_weather=wx,
                 quality_flag=qc,
             )
@@ -353,12 +391,10 @@ class GHCNhParser:
 
         hourly_records: List[GHCNhObservation] = []
         for (y, m, d, h), bucket in sorted(hourly_buckets.items()):
-            # Best representative reading in the hour: prefer closest to :00 or valid precip reading
-            # If multiple, sum precipitation within the hour, take last temp/pressure
-            best = min(bucket, key=lambda o: abs(o.minute - 0))
-            total_hourly_precip = max(
-                (o.precipitation_1h_mm or 0.0) for o in bucket
-            )
+            # NOAA reports can arrive multiple times per hour.  Use the latest
+            # report, consistently for precipitation and every companion field;
+            # max() would turn a later correction into a false accumulation.
+            best = max(bucket, key=lambda o: (o.minute, o.timestamp))
 
             # Construct clean hourly record
             clean_rec = GHCNhObservation(
@@ -377,23 +413,36 @@ class GHCNhParser:
                 relative_humidity=best.relative_humidity,
                 wind_direction_deg=best.wind_direction_deg,
                 wind_speed_mps=best.wind_speed_mps,
+                visibility_m=best.visibility_m,
                 station_pressure_hpa=best.station_pressure_hpa,
                 sea_level_pressure_hpa=best.sea_level_pressure_hpa,
-                precipitation_mm=total_hourly_precip,
-                precipitation_1h_mm=total_hourly_precip,
+                precipitation_mm=best.precipitation_mm,
+                precipitation_1h_mm=best.precipitation_1h_mm,
                 precipitation_3h_mm=None,
                 precipitation_6h_mm=None,
+                precip_missing=best.precip_missing,
                 present_weather=best.present_weather,
                 quality_flag=best.quality_flag,
             )
             hourly_records.append(clean_rec)
 
-        # Compute rolling 3-hour and 6-hour accumulations
-        for i, rec in enumerate(hourly_records):
-            p3 = sum(hourly_records[j].precipitation_1h_mm or 0.0 for j in range(max(0, i - 2), i + 1))
-            p6 = sum(hourly_records[j].precipitation_1h_mm or 0.0 for j in range(max(0, i - 5), i + 1))
-            rec.precipitation_3h_mm = round(p3, 2)
-            rec.precipitation_6h_mm = round(p6, 2)
+        # Compute windows by their timestamps, not by list adjacency.  A gap or
+        # a missing hourly precipitation report invalidates the whole window.
+        by_timestamp = {
+            datetime(rec.year, rec.month, rec.day, rec.hour, tzinfo=timezone.utc): rec
+            for rec in hourly_records
+        }
+
+        def rolling_sum(end: datetime, hours: int) -> Optional[float]:
+            window = [by_timestamp.get(end - timedelta(hours=offset)) for offset in range(hours)]
+            if any(rec is None or rec.precip_missing for rec in window):
+                return None
+            return round(sum(rec.precipitation_1h_mm for rec in window if rec is not None), 2)
+
+        for rec in hourly_records:
+            end = datetime(rec.year, rec.month, rec.day, rec.hour, tzinfo=timezone.utc)
+            rec.precipitation_3h_mm = rolling_sum(end, 3)
+            rec.precipitation_6h_mm = rolling_sum(end, 6)
 
         return hourly_records
 
