@@ -98,7 +98,7 @@ class DEMFlowRoutingAlertEngine:
         """
         Traces D8 hydrological descent and alerts downstream valley communities.
         """
-        if trigger_station.elevation_m < self.elevated_threshold_m:
+        if not self.dem_pipeline.is_station_elevated(trigger_station):
             return []
         if trigger_risk_score < self.trigger_risk_threshold:
             return []

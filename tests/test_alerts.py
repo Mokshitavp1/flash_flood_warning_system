@@ -21,7 +21,7 @@ from src.terrain.dem_pipeline import DEMPipeline
 class TestAlerts(unittest.TestCase):
 
     def setUp(self):
-        self.dem_pipeline = DEMPipeline(elevated_threshold_m=2000.0)
+        self.dem_pipeline = DEMPipeline(elevated_threshold_m=40.0)
         self.logger = AlertLogger()
 
         # Trigger station: Mountain summit (elevated, 3200m)

@@ -64,8 +64,12 @@ class TestPipelineEndToEnd(unittest.TestCase):
             self.assertIn("baseline_rainfall", ablation)
             self.assertIn("baseline_noaa_ffg", ablation)
 
-            # Check that Stage 4 (Flow Routing) achieves positive CSI
-            self.assertGreater(ablation["stage_4_flow_routing"]["csi"], 0.0)
+            # Stage 4 must not manufacture sample-level hits. Downstream
+            # routing is audited separately in the alert outputs.
+            self.assertEqual(
+                ablation["stage_4_flow_routing"]["csi"],
+                ablation["stage_3_multimodal"]["csi"],
+            )
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 
 from src.alerts.alert_logger import AlertEventLog, AlertLogger
 from src.ingestion.ghcnh_parser import StationMetadata
+from src.terrain.dem_pipeline import DEMPipeline
 
 
 def haversine_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -38,10 +39,12 @@ class CircularBufferAlertEngine:
         radius_km: float = 25.0,
         elevated_threshold_m: float = 2000.0,
         trigger_risk_threshold: float = 0.65,
+        dem_pipeline: Optional[DEMPipeline] = None,
     ):
         self.radius_km = radius_km
         self.elevated_threshold_m = elevated_threshold_m
         self.trigger_risk_threshold = trigger_risk_threshold
+        self.dem_pipeline = dem_pipeline
 
     def evaluate_and_propagate(
         self,
@@ -56,7 +59,12 @@ class CircularBufferAlertEngine:
         propagates alerts to all candidate stations within radius_km.
         """
         # Check elevation and risk conditions
-        if trigger_station.elevation_m < self.elevated_threshold_m:
+        trigger_is_elevated = (
+            self.dem_pipeline.is_station_elevated(trigger_station)
+            if self.dem_pipeline
+            else trigger_station.elevation_m >= self.elevated_threshold_m
+        )
+        if not trigger_is_elevated:
             return []
         if trigger_risk_score < self.trigger_risk_threshold:
             return []

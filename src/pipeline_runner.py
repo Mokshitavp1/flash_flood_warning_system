@@ -68,7 +68,9 @@ class FlashFloodPipelineRunner:
         # Core pipeline components
         self.parser = GHCNhParser()
         self.dem_pipeline = DEMPipeline(
-            elevated_threshold_m=self.pipeline_config["region"]["high_elevation_threshold_m"]
+            elevated_threshold_m=self.pipeline_config["terrain"].get(
+                "relative_relief_threshold_m", 40.0
+            )
         )
         self.trajectory_builder = SatelliteTrajectoryBuilder(
             window_hours=self.pipeline_config["satellite"]["window_hours"],
@@ -244,6 +246,7 @@ class FlashFloodPipelineRunner:
             radius_km=self.alert_config["baseline_v0_circular_buffer"]["radius_km"],
             elevated_threshold_m=self.alert_config["thresholds"]["elevated_station_min_elevation_m"],
             trigger_risk_threshold=self.alert_config["thresholds"]["elevated_station_min_risk_trigger"],
+            dem_pipeline=self.dem_pipeline,
         )
 
         flow_engine = DEMFlowRoutingAlertEngine(

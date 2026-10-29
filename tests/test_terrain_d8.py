@@ -61,7 +61,7 @@ class TestTerrainD8(unittest.TestCase):
 
     def test_dem_pipeline_caches_per_station(self):
         """FR3.1: Station terrain features must be cached and pulled once per station."""
-        pipeline = DEMPipeline()
+        pipeline = DEMPipeline(elevated_threshold_m=40.0)
         st = StationMetadata(
             station_id="USW00093037",
             station_name="SANDIA",
@@ -77,6 +77,7 @@ class TestTerrainD8(unittest.TestCase):
         self.assertIs(feat1, feat2)
         self.assertEqual(feat1.station_id, "USW00093037")
         self.assertTrue(feat1.is_elevated_terrain)
+        self.assertGreaterEqual(feat1.relative_height_m, 40.0)
         self.assertGreater(feat1.slope_degrees, 0.0)
 
 

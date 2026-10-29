@@ -30,17 +30,18 @@ class StationTerrainFeatures:
     flow_accumulation_cells: int
     flow_accumulation_log: float
     drainage_area_km2: float
-    is_elevated_terrain: bool  # True if in mountain headwaters (e.g. > 2000m)
+    is_elevated_terrain: bool  # True when DEM-derived local relief exceeds the configured threshold
+    relative_height_m: float = 0.0
 
     def to_feature_vector(self) -> List[float]:
         """Returns normalized 5D terrain feature vector for neural network branch (FR4.3)."""
-        # [norm_elevation, norm_slope, norm_aspect, log_flow_accum, is_elevated]
+        # [norm_relative_height, norm_slope, norm_aspect, log_flow_accum, is_elevated]
         norm_elev = min(1.0, max(0.0, (self.elevation_m - 1000.0) / 3000.0))
         norm_slope = min(1.0, self.slope_degrees / 60.0)
         norm_aspect = self.aspect_degrees / 360.0
         norm_accum = min(1.0, self.flow_accumulation_log / 12.0)
         return [
-            round(norm_elev, 4),
+            round(min(1.0, max(0.0, self.relative_height_m / 500.0)), 4),
             round(norm_slope, 4),
             round(norm_aspect, 4),
             round(norm_accum, 4),
@@ -58,13 +59,17 @@ class DEMPipeline:
         self,
         grid_radius_cells: int = 15,
         cell_size_m: float = 30.0,
-        elevated_threshold_m: float = 2000.0,
+        elevated_threshold_m: float = 40.0,
     ):
         self.grid_radius_cells = grid_radius_cells
         self.cell_size_m = cell_size_m
         self.elevated_threshold_m = elevated_threshold_m
         self.router = D8FlowRouter(cell_size_m=cell_size_m)
         self.station_cache: Dict[str, StationTerrainFeatures] = {}
+
+    def is_station_elevated(self, station_meta: StationMetadata) -> bool:
+        """Return the DEM-derived local-relief gate for a station."""
+        return self.extract_station_terrain(station_meta).is_elevated_terrain
 
     def synthesize_station_dem(
         self, station_meta: StationMetadata
@@ -121,7 +126,9 @@ class DEMPipeline:
         log_accum = round(math.log(max(1.0, float(accum_cells))), 3)
         cell_area_km2 = (self.cell_size_m * self.cell_size_m) / 1e6
         drainage_km2 = round(accum_cells * cell_area_km2, 4)
-        is_elevated = station_meta.elevation_m >= self.elevated_threshold_m
+        local_lowest_elevation = min(min(row) for row in dem)
+        relative_height_m = round(station_meta.elevation_m - local_lowest_elevation, 2)
+        is_elevated = relative_height_m >= self.elevated_threshold_m
 
         features = StationTerrainFeatures(
             station_id=st_id,
@@ -135,6 +142,7 @@ class DEMPipeline:
             flow_accumulation_log=log_accum,
             drainage_area_km2=drainage_km2,
             is_elevated_terrain=is_elevated,
+            relative_height_m=relative_height_m,
         )
 
         self.station_cache[st_id] = features

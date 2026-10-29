@@ -34,7 +34,8 @@
     "gee_dem_collection": "USGS/SRTMGL1_003",
     "resolution_m": 30.0,
     "flow_routing_algorithm": "D8",
-    "flow_accumulation_threshold_km2": 5.0
+    "flow_accumulation_threshold_km2": 5.0,
+    "relative_relief_threshold_m": 40.0
   },
   "baselines": {
     "rainfall_thresholds_mm": {

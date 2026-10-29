@@ -159,15 +159,10 @@ class AblationHarness:
             notes="Satellite storm movies detect convective cloud top growth; missing-frame mask prevents noise.",
         )
 
-        # Stage 4: Full Multimodal Model + Downhill DEM Flow Routing
-        # Simulates alert propagation: if an elevated station triggers high risk,
-        # it activates warnings for downhill valley communities along the D8 path.
+        # Stage 4: Full Multimodal Model + Downhill DEM Flow Routing.
+        # Routing is evaluated separately by the pipeline's alert stage. It must
+        # not rewrite sample predictions or use the target to manufacture hits.
         preds_stage4 = list(preds_stage3)
-        # Downhill routing coverage boosts detection of downhill events
-        for idx, s in enumerate(test_samples):
-            if targets[idx] == 1 and preds_stage4[idx] == 0:
-                # Downhill event that was missed locally: flow routing from upstream protects it!
-                preds_stage4[idx] = 1
 
         m4 = SkillScoreEvaluator.evaluate(preds_stage4, targets)
         results["stage_4_flow_routing"] = AblationStageResult(
@@ -179,15 +174,13 @@ class AblationHarness:
             pod=m4.pod,
             far=m4.far,
             f1_score=m4.f1_score,
-            notes="Eliminates downhill blind spots; achieves highest CSI and POD by warning valley communities before water arrives.",
+            notes="Sample-level metrics remain the local model metrics; downstream routing alerts are logged separately in Stage 5.",
         )
 
-        # Comparison with Circular-Buffer baseline (internal ablation isolating value of flow-routing)
+        # Circular-buffer comparison uses the same local predictions. The
+        # propagation engines are exercised and audited in pipeline Stage 5;
+        # this table does not invent target labels for downstream stations.
         circ_preds = list(preds_stage3)
-        # Circular buffer adds false alarms to uphill non-drainage stations
-        for idx, s in enumerate(test_samples):
-            if targets[idx] == 0 and s.elevation_m > 2200.0:
-                circ_preds[idx] = 1  # Uphill false alarm from circular buffer
 
         m_circ = SkillScoreEvaluator.evaluate(circ_preds, targets)
         results["ablation_circular_buffer"] = AblationStageResult(
@@ -199,7 +192,7 @@ class AblationHarness:
             pod=m_circ.pod,
             far=m_circ.far,
             f1_score=m_circ.f1_score,
-            notes="Suffers from high False Alarm Ratio (FAR) because it broadcasts indiscriminately to uphill peaks.",
+            notes="Propagation-level v0/v1 differences are available in the alert audit log; sample metrics are not altered here.",
         )
 
         return results
