@@ -21,7 +21,18 @@ from src.terrain.dem_pipeline import DEMPipeline
 class TestAlerts(unittest.TestCase):
 
     def setUp(self):
-        self.dem_pipeline = DEMPipeline(elevated_threshold_m=40.0)
+        self.dem_pipeline = DEMPipeline(
+            elevated_threshold_m=40.0,
+            dem_loader=lambda _station: (
+                [
+                    [120.0, 110.0, 40.0],
+                    [110.0, 100.0, 30.0],
+                    [40.0, 30.0, 0.0],
+                ],
+                1,
+                1,
+            ),
+        )
         self.logger = AlertLogger()
 
         # Trigger station: Mountain summit (elevated, 3200m)
@@ -78,6 +89,7 @@ class TestAlerts(unittest.TestCase):
         flow_engine = DEMFlowRoutingAlertEngine(
             dem_pipeline=self.dem_pipeline,
             trigger_risk_threshold=0.65,
+            min_alert_strength=0.2,
         )
         candidates = [self.downhill_valley_station, self.uphill_ridge_station]
 

@@ -29,6 +29,7 @@ class TrajectoryFrameManifestItem:
     satellite_id: str
     patch_mean_ir: Optional[float] = None
     cloud_fraction: Optional[float] = None
+    source_file_name: Optional[str] = None
 
     def __post_init__(self):
         if self.status not in ("ok", "missing"):
@@ -38,8 +39,9 @@ class TrajectoryFrameManifestItem:
         # NFR1 Hard Invariant: If status is 'missing', matched time must NOT be copied from another frame
         if self.status == "missing":
             if self.matched_satellite_time_utc is not None:
-                # Must be None or empty
-                pass
+                raise ValueError(
+                    "Missing frames must not contain a matched satellite timestamp."
+                )
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -152,6 +154,7 @@ class MissingFrameManifest:
             "satellite_id",
             "patch_mean_ir",
             "cloud_fraction",
+            "source_file_name",
         ]
 
         with open(target, "w", newline="", encoding="utf-8") as f:

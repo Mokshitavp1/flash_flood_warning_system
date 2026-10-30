@@ -1,0 +1,72 @@
+{
+  "USW00004122": {
+    "station_id": "USW00004122",
+    "latitude": 34.981,
+    "longitude": -106.68,
+    "elevation_m": 100.0,
+    "slope_degrees": 58.78,
+    "aspect_degrees": 315.0,
+    "flow_direction_d8": 2,
+    "flow_accumulation_cells": 2,
+    "flow_accumulation_log": 0.693,
+    "drainage_area_km2": 0.0018,
+    "is_elevated_terrain": true,
+    "relative_height_m": 100.0
+  },
+  "USW00013019": {
+    "station_id": "USW00013019",
+    "latitude": 35.0841,
+    "longitude": -106.3812,
+    "elevation_m": 100.0,
+    "slope_degrees": 58.78,
+    "aspect_degrees": 315.0,
+    "flow_direction_d8": 2,
+    "flow_accumulation_cells": 2,
+    "flow_accumulation_log": 0.693,
+    "drainage_area_km2": 0.0018,
+    "is_elevated_terrain": true,
+    "relative_height_m": 100.0
+  },
+  "USW00014023": {
+    "station_id": "USW00014023",
+    "latitude": 35.687,
+    "longitude": -105.9378,
+    "elevation_m": 100.0,
+    "slope_degrees": 58.78,
+    "aspect_degrees": 315.0,
+    "flow_direction_d8": 2,
+    "flow_accumulation_cells": 2,
+    "flow_accumulation_log": 0.693,
+    "drainage_area_km2": 0.0018,
+    "is_elevated_terrain": true,
+    "relative_height_m": 100.0
+  },
+  "USW00023188": {
+    "station_id": "USW00023188",
+    "latitude": 35.2103,
+    "longitude": -106.4497,
+    "elevation_m": 100.0,
+    "slope_degrees": 58.78,
+    "aspect_degrees": 315.0,
+    "flow_direction_d8": 2,
+    "flow_accumulation_cells": 2,
+    "flow_accumulation_log": 0.693,
+    "drainage_area_km2": 0.0018,
+    "is_elevated_terrain": true,
+    "relative_height_m": 100.0
+  },
+  "USW00093037": {
+    "station_id": "USW00093037",
+    "latitude": 35.1522,
+    "longitude": -106.4851,
+    "elevation_m": 100.0,
+    "slope_degrees": 58.78,
+    "aspect_degrees": 315.0,
+    "flow_direction_d8": 2,
+    "flow_accumulation_cells": 2,
+    "flow_accumulation_log": 0.693,
+    "drainage_area_km2": 0.0018,
+    "is_elevated_terrain": true,
+    "relative_height_m": 100.0
+  }
+}

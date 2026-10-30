@@ -48,3 +48,12 @@ export interface AblationScore {
   description: string;
   isBaseline: boolean;
 }
+
+export interface PipelineData {
+  generatedAt: string;
+  stations: Station[];
+  trajectoryFrames: TrajectoryFrame[];
+  alerts: AlertEvent[];
+  ablationScores: AblationScore[];
+  source: string;
+}

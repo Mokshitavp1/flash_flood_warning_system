@@ -1,5 +1,11 @@
 # NOAA GHCN-Hourly (GHCNh) Data Ingestion Directory
 
+Terrain data is separate from GHCNh. Place downloaded USGS 3DEP GeoTIFF
+files in `data/dem/`, then run
+`python -m src.terrain.reproject_dem`. This creates metric rasters in
+`data/dem_projected`, which the terrain pipeline reads. It no longer creates
+synthetic elevation tiles or silently falls back to one.
+
 This directory is the designated landing folder for raw NOAA Global Historical Climatology Network - Hourly (GHCNh) data files.
 
 **IMPORTANT:** Keep this directory empty of actual data files in the repository. Drop your uncompressed or gzip-compressed NOAA GHCNh files here to run the ingestion pipeline.

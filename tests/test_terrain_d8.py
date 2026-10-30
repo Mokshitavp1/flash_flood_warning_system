@@ -21,6 +21,11 @@ class TestTerrainD8(unittest.TestCase):
 
     def setUp(self):
         self.router = D8FlowRouter(cell_size_m=30.0)
+        self.test_dem = [
+            [120.0, 110.0, 40.0],
+            [110.0, 100.0, 30.0],
+            [40.0, 30.0, 0.0],
+        ]
 
     def test_d8_flow_direction_on_inclined_plane(self):
         """On a plane sloping down to the East, flow direction should be EAST (1)."""
@@ -61,7 +66,10 @@ class TestTerrainD8(unittest.TestCase):
 
     def test_dem_pipeline_caches_per_station(self):
         """FR3.1: Station terrain features must be cached and pulled once per station."""
-        pipeline = DEMPipeline(elevated_threshold_m=40.0)
+        pipeline = DEMPipeline(
+            elevated_threshold_m=40.0,
+            dem_loader=lambda _station: (self.test_dem, 1, 1),
+        )
         st = StationMetadata(
             station_id="USW00093037",
             station_name="SANDIA",

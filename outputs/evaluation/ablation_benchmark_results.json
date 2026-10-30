@@ -1,14 +1,14 @@
 {
   "baseline_rainfall": {
     "stage_id": "baseline_a",
-    "stage_name": "Rainfall Threshold Baseline (>25mm/h)",
+    "stage_name": "Rainfall Threshold Baseline (configured 1h/3h/6h)",
     "description": "Naive alert solely based on local precipitation gauge readings.",
     "metrics": {
       "hits": 0,
-      "misses": 0,
+      "misses": 1,
       "false_alarms": 0,
-      "correct_negatives": 35,
-      "total": 35,
+      "correct_negatives": 12,
+      "total": 13,
       "pod": 0.0,
       "far": 0.0,
       "csi": 0.0,
@@ -17,7 +17,7 @@
       "f1_score": 0.0,
       "precision": 0.0,
       "recall": 0.0,
-      "accuracy": 1.0
+      "accuracy": 0.9231
     },
     "csi": 0.0,
     "pod": 0.0,
@@ -31,10 +31,10 @@
     "description": "Operational NWS regional runoff threshold comparison.",
     "metrics": {
       "hits": 0,
-      "misses": 0,
+      "misses": 1,
       "false_alarms": 0,
-      "correct_negatives": 35,
-      "total": 35,
+      "correct_negatives": 12,
+      "total": 13,
       "pod": 0.0,
       "far": 0.0,
       "csi": 0.0,
@@ -43,7 +43,7 @@
       "f1_score": 0.0,
       "precision": 0.0,
       "recall": 0.0,
-      "accuracy": 1.0
+      "accuracy": 0.9231
     },
     "csi": 0.0,
     "pod": 0.0,
@@ -57,10 +57,10 @@
     "description": "LSTM sequence model over GHCNh precipitation, temperature, pressure, wind.",
     "metrics": {
       "hits": 0,
-      "misses": 0,
+      "misses": 1,
       "false_alarms": 0,
-      "correct_negatives": 35,
-      "total": 35,
+      "correct_negatives": 12,
+      "total": 13,
       "pod": 0.0,
       "far": 0.0,
       "csi": 0.0,
@@ -69,7 +69,7 @@
       "f1_score": 0.0,
       "precision": 0.0,
       "recall": 0.0,
-      "accuracy": 1.0
+      "accuracy": 0.9231
     },
     "csi": 0.0,
     "pod": 0.0,
@@ -83,10 +83,10 @@
     "description": "Fuses weather sequences with DEM elevation, slope, aspect, and flow accumulation.",
     "metrics": {
       "hits": 0,
-      "misses": 0,
+      "misses": 1,
       "false_alarms": 0,
-      "correct_negatives": 35,
-      "total": 35,
+      "correct_negatives": 12,
+      "total": 13,
       "pod": 0.0,
       "far": 0.0,
       "csi": 0.0,
@@ -95,7 +95,7 @@
       "f1_score": 0.0,
       "precision": 0.0,
       "recall": 0.0,
-      "accuracy": 1.0
+      "accuracy": 0.9231
     },
     "csi": 0.0,
     "pod": 0.0,
@@ -109,10 +109,10 @@
     "description": "Full multimodal fusion with GOES-16 ABI storm trajectories and explicit missing-frame masking.",
     "metrics": {
       "hits": 0,
-      "misses": 0,
+      "misses": 1,
       "false_alarms": 0,
-      "correct_negatives": 35,
-      "total": 35,
+      "correct_negatives": 12,
+      "total": 13,
       "pod": 0.0,
       "far": 0.0,
       "csi": 0.0,
@@ -121,7 +121,7 @@
       "f1_score": 0.0,
       "precision": 0.0,
       "recall": 0.0,
-      "accuracy": 1.0
+      "accuracy": 0.9231
     },
     "csi": 0.0,
     "pod": 0.0,
@@ -135,10 +135,10 @@
     "description": "End-to-end warning pipeline combining multimodal AI with D8 hydrological downhill alert propagation.",
     "metrics": {
       "hits": 0,
-      "misses": 0,
+      "misses": 1,
       "false_alarms": 0,
-      "correct_negatives": 35,
-      "total": 35,
+      "correct_negatives": 12,
+      "total": 13,
       "pod": 0.0,
       "far": 0.0,
       "csi": 0.0,
@@ -147,13 +147,13 @@
       "f1_score": 0.0,
       "precision": 0.0,
       "recall": 0.0,
-      "accuracy": 1.0
+      "accuracy": 0.9231
     },
     "csi": 0.0,
     "pod": 0.0,
     "far": 0.0,
     "f1_score": 0.0,
-    "notes": "Eliminates downhill blind spots; achieves highest CSI and POD by warning valley communities before water arrives."
+    "notes": "Sample-level metrics remain the local model metrics; downstream routing alerts are logged separately in Stage 5."
   },
   "ablation_circular_buffer": {
     "stage_id": "ablation_circ",
@@ -161,10 +161,10 @@
     "description": "Alerts all stations within 25km radius regardless of terrain slope or watershed boundaries.",
     "metrics": {
       "hits": 0,
-      "misses": 0,
+      "misses": 1,
       "false_alarms": 0,
-      "correct_negatives": 35,
-      "total": 35,
+      "correct_negatives": 12,
+      "total": 13,
       "pod": 0.0,
       "far": 0.0,
       "csi": 0.0,
@@ -173,12 +173,12 @@
       "f1_score": 0.0,
       "precision": 0.0,
       "recall": 0.0,
-      "accuracy": 1.0
+      "accuracy": 0.9231
     },
     "csi": 0.0,
     "pod": 0.0,
     "far": 0.0,
     "f1_score": 0.0,
-    "notes": "Suffers from high False Alarm Ratio (FAR) because it broadcasts indiscriminately to uphill peaks."
+    "notes": "Propagation-level v0/v1 differences are available in the alert audit log; sample metrics are not altered here."
   }
 }

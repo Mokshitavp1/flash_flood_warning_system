@@ -13,3 +13,9 @@ __pycache__/
 data/*
 !data/README.md
 !data/stations.csv
+!data/dem/
+!data/dem/README.md
+!data/dem_projected/
+!data/goes_cache/
+data/dem_projected/*
+data/goes_cache/*

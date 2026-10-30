@@ -17,6 +17,8 @@ from pathlib import Path
 
 from src.ingestion.mock_ghcnh_generator import MockGHCNhGenerator
 from src.pipeline_runner import FlashFloodPipelineRunner
+from src.terrain.dem_pipeline import DEMPipeline
+from src.trajectory.gee_client import GEEClient
 
 
 class TestPipelineEndToEnd(unittest.TestCase):
@@ -31,7 +33,20 @@ class TestPipelineEndToEnd(unittest.TestCase):
             mock_gen.write_mock_dataset(mock_data_dir, num_hours=24)
 
             # Initialize and run pipeline
-            runner = FlashFloodPipelineRunner()
+            runner = FlashFloodPipelineRunner(
+                satellite_client=GEEClient(seed=123),
+                dem_pipeline=DEMPipeline(
+                    dem_loader=lambda _station: (
+                        [
+                            [120.0, 110.0, 40.0],
+                            [110.0, 100.0, 30.0],
+                            [40.0, 30.0, 0.0],
+                        ],
+                        1,
+                        1,
+                    )
+                ),
+            )
             # Overwrite output targets to temp directory
             runner.manifest_path = temp_path / "manifest.csv"
             runner.alerts_dir = temp_path / "alerts"

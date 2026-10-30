@@ -36,6 +36,7 @@ from src.model.dataset import MultimodalEventSample, StationAnchoredFloodDataset
 from src.model.multimodal_model import MultimodalFlashFloodNet
 from src.terrain.dem_pipeline import DEMPipeline
 from src.trajectory.manifest import MissingFrameManifest
+from src.trajectory.noaa_aws_client import NOAAAWSGOESClient
 from src.trajectory.trajectory_builder import (
     SatelliteTrajectoryBuilder,
     SatelliteTrajectorySequence,
@@ -50,6 +51,8 @@ class FlashFloodPipelineRunner:
         pipeline_config_path: str = "configs/pipeline_config.json",
         model_config_path: str = "configs/model_config.json",
         alert_config_path: str = "configs/alert_config.json",
+        satellite_client: Optional[Any] = None,
+        dem_pipeline: Optional[DEMPipeline] = None,
     ):
         self.pipeline_config = self._load_json(pipeline_config_path)
         self.model_config = self._load_json(model_config_path)
@@ -67,16 +70,29 @@ class FlashFloodPipelineRunner:
 
         # Core pipeline components
         self.parser = GHCNhParser()
-        self.dem_pipeline = DEMPipeline(
+        configured_dem_pipeline = DEMPipeline(
             elevated_threshold_m=self.pipeline_config["terrain"].get(
                 "relative_relief_threshold_m", 40.0
-            )
+            ),
+            dem_directory=self.pipeline_config["data_paths"].get(
+                "dem_dir", "data/dem"
+            ),
         )
+        self.dem_pipeline = dem_pipeline or configured_dem_pipeline
+        configured_satellite_client = NOAAAWSGOESClient(
+            bands=self.pipeline_config["satellite"]["bands"],
+            patch_size=self.pipeline_config["satellite"]["patch_size_pixels"],
+            resolution_km=self.pipeline_config["satellite"]["spatial_resolution_km"],
+            cache_directory=self.pipeline_config["data_paths"].get(
+                "goes_cache_dir", "data/goes_cache"
+            ),
+        ) if self.pipeline_config["satellite"].get("source") == "NOAA_AWS" else None
         self.trajectory_builder = SatelliteTrajectoryBuilder(
             window_hours=self.pipeline_config["satellite"]["window_hours"],
             step_minutes=self.pipeline_config["satellite"]["step_minutes"],
             tolerance_minutes=self.pipeline_config["satellite"]["tolerance_minutes"],
             patch_size=self.pipeline_config["satellite"]["patch_size_pixels"],
+            gee_client=satellite_client or configured_satellite_client,
         )
         self.model = MultimodalFlashFloodNet()
         self.alert_logger = AlertLogger()
@@ -213,6 +229,14 @@ class FlashFloodPipelineRunner:
                 f"IsElevated={feat.is_elevated_terrain}"
             )
 
+        terrain_output = Path(self.pipeline_config["data_paths"].get(
+            "terrain_dir", "outputs/terrain"
+        ))
+        terrain_output.mkdir(parents=True, exist_ok=True)
+        (terrain_output / "station_terrain.json").write_text(
+            json.dumps({station_id: feature.to_dict() for station_id, feature in terrain_features.items()}, indent=2),
+            encoding="utf-8",
+        )
         return terrain_features
 
     def run_stage_4_multimodal_inference(

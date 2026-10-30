@@ -138,6 +138,7 @@ class SatelliteTrajectoryBuilder:
                         satellite_id=image_result.get("satellite_id", "GOES-16"),
                         patch_mean_ir=image_result.get("patch_mean_ir"),
                         cloud_fraction=image_result.get("cloud_fraction"),
+                        source_file_name=image_result.get("source_file_name"),
                     )
                     manifest.add_record(manifest_item)
             else:
@@ -161,6 +162,7 @@ class SatelliteTrajectoryBuilder:
                         satellite_id="NONE",
                         patch_mean_ir=None,
                         cloud_fraction=None,
+                        source_file_name=None,
                     )
                     manifest.add_record(manifest_item)
 

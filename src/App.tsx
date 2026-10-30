@@ -21,20 +21,16 @@ import {
   ChevronRight,
   Sliders,
 } from 'lucide-react';
-import {
-  INITIAL_STATIONS,
-  INITIAL_TRAJECTORY_FRAMES,
-  INITIAL_ALERTS,
-  ABLATION_SCORES,
-} from './data/mockPipelineData';
-import { Station, TrajectoryFrame, AlertEvent } from './types/pipeline';
+import { Station, TrajectoryFrame, AlertEvent, PipelineData } from './types/pipeline';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<
     'simulation' | 'trajectory' | 'ingestion' | 'model' | 'ablation' | 'runner' | 'overview'
   >('simulation');
   const [alertMethod, setAlertMethod] = useState<'v0' | 'v1'>('v1');
-  const [selectedStation, setSelectedStation] = useState<Station>(INITIAL_STATIONS[0]);
+  const [pipelineData, setPipelineData] = useState<PipelineData | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   const [selectedFrameIndex, setSelectedFrameIndex] = useState<number>(4); // t0 (16:00 UTC)
   const [isRunningPipeline, setIsRunningPipeline] = useState<boolean>(false);
   const [simTimeMinutes, setSimTimeMinutes] = useState<number>(45);
@@ -43,6 +39,27 @@ export default function App() {
     'USW00093037|ALBUQUERQUE FOOTHILLS|35.1522|-106.4851|2420.0|2023|08|15|16|00|22.4|18.5|78.0|240|12.8|19.5|836.4|1006.2|38.0|38.0|48.5|52.0||TSRA|V'
   );
   const [parsedPsvOutput, setParsedPsvOutput] = useState<any>(null);
+  const stations = pipelineData?.stations ?? [];
+  const trajectoryFrames = pipelineData?.trajectoryFrames ?? [];
+  const alerts = pipelineData?.alerts ?? [];
+  const ablationScores = pipelineData?.ablationScores ?? [];
+
+  useEffect(() => {
+    fetch('/api/pipeline-data')
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(await response.text());
+        }
+        return response.json() as Promise<PipelineData>;
+      })
+      .then((data) => {
+        setPipelineData(data);
+        setSelectedStation(data.stations[0] ?? null);
+      })
+      .catch((error: unknown) => {
+        setLoadError(error instanceof Error ? error.message : 'Unable to load pipeline data.');
+      });
+  }, []);
 
   const [pipelineLogs, setPipelineLogs] = useState<string[]>([
     'Pipeline initialized. Ready to execute or ingest NOAA GHCNh files from data/.',
@@ -67,18 +84,8 @@ export default function App() {
     setPipelineLogs((prev) => [
       ...prev,
       `>>> [${new Date().toISOString().slice(11, 19)}] PIPELINE EXECUTION INITIATED <<<`,
-      'Stage 1 (Ingestion): Scanning data/ for NOAA GHCNh PSV records. Cleaned 240 hourly timesteps.',
-      'Stage 2 (Trajectories): Building station-anchored GOES-16 ABI sequences (±2h window, 30m cadence).',
-      'Stage 2 (NFR1 Audit): 495 frames evaluated (83.6% ok, 16.4% missing). Forward-fill check: PASSED.',
-      'Stage 3 (Terrain): Computing elevation, slope, aspect, D8 directions, and flow accumulation.',
-      'Stage 4 (Multimodal): Fusing satellite masked attention, tabular weather series, and terrain MLP.',
-      'Stage 4 (Storm Trigger): Severe convective core at Sandia Crest Peak (Elev: 3255m, Rain: 52.4 mm/h, Risk: 0.88).',
-      'Stage 5 (Alerts): DEM flow-routing propagating downstream warning along drainage axis...',
-      'Stage 5 (Warning): Tijeras Canyon Settlement warned (Distance: 18.2 km, Lead Time: 48.5 min, Local Rain: 0.0 mm).',
-      'Stage 5 (Warning): Rio Grande Confluence warned (Distance: 42.6 km, Lead Time: 115.0 min, Local Rain: 0.0 mm).',
-      'Stage 5 (False Alarm Avoidance): Uphill peak North Peak Ridge safely ignored (0 false alarms).',
-      'Stage 6 (Evaluation): Ablation benchmark complete. CSI = 0.667 (+166% improvement over NOAA FFG).',
-      `>>> [${new Date().toISOString().slice(11, 19)}] ALL PIPELINE STAGES COMPLETED SUCCESSFULLY <<<`,
+      'The browser reads the latest persisted Python pipeline artifacts; run `python run_pipeline.py data` in the backend to refresh them.',
+      `>>> [${new Date().toISOString().slice(11, 19)}] LIVE ARTIFACT REFRESH REQUESTED <<<`,
     ]);
     setTimeout(() => {
       setIsRunningPipeline(false);
@@ -111,7 +118,14 @@ export default function App() {
     });
   };
 
-  const currentFrame = INITIAL_TRAJECTORY_FRAMES[selectedFrameIndex];
+  const currentFrame = trajectoryFrames[selectedFrameIndex];
+
+  if (loadError) {
+    return <div className="min-h-screen bg-[#EFF1ED] p-8 text-[#7C2D12]">Real pipeline data could not be loaded: {loadError}</div>;
+  }
+  if (!pipelineData || !selectedStation || !currentFrame) {
+    return <div className="min-h-screen bg-[#EFF1ED] p-8 text-[#373D20]">Loading real pipeline data...</div>;
+  }
 
   return (
     <div className="min-h-screen bg-[#EFF1ED] text-[#373D20] flex flex-col font-sans">
@@ -345,7 +359,7 @@ export default function App() {
                   )}
 
                   {/* Station Pins */}
-                  {INITIAL_STATIONS.map((station) => {
+                  {stations.map((station) => {
                     let top = '50%';
                     let left = '50%';
                     if (station.id === 'USW00093037') { top = '26%'; left = '45%'; }
@@ -507,7 +521,7 @@ export default function App() {
                   </div>
 
                   <div className="space-y-2.5 text-xs">
-                    {INITIAL_ALERTS.filter((a) =>
+                    {alerts.filter((a) =>
                       alertMethod === 'v0' ? true : a.method === 'v1_dem_flow_routing'
                     ).map((alert) => (
                       <div
@@ -565,7 +579,7 @@ export default function App() {
                   TIMESTEP TRAJECTORY SEQUENCE (-120m to +120m):
                 </span>
                 <div className="grid grid-cols-3 sm:grid-cols-9 gap-2.5">
-                  {INITIAL_TRAJECTORY_FRAMES.map((frame, idx) => {
+                  {trajectoryFrames.map((frame, idx) => {
                     const isSelected = selectedFrameIndex === idx;
                     const isOk = frame.status === 'ok';
                     return (
@@ -854,7 +868,7 @@ export default function App() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#BCBD8B]/30 text-[#373D20]">
-                    {ABLATION_SCORES.map((score) => {
+                    {ablationScores.map((score) => {
                       const isPeak = score.stageId === 'stage_4';
                       return (
                         <tr
