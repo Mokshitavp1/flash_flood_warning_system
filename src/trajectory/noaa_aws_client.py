@@ -23,8 +23,27 @@ logger = logging.getLogger(__name__)
 class NOAAAWSGOESClient:
     """Fetch real GOES-16 ABI MCMIPF data from the public NOAA S3 bucket."""
 
-    bucket_url = "https://noaa-goes16.s3.amazonaws.com"
+    bucket_url = "https://noaa-goes16.s3.amazonaws.com"  # GOES-16 (kept for compatibility)
+    goes19_bucket_url = "https://noaa-goes19.s3.amazonaws.com"
+    # GOES-19 became operational GOES-East on 2025-04-07 15:10 UTC and GOES-16
+    # distribution then stopped, so later times must come from the GOES-19 bucket.
+    goes19_cutover = datetime(2025, 4, 7, 15, 10, tzinfo=timezone.utc)
     filename_time = re.compile(r"_s(\d{4})(\d{3})(\d{2})(\d{2})(\d{2})")
+    satellite_in_key = re.compile(r"_G(\d{2})_")
+
+    @classmethod
+    def _satellite_for_time(cls, when: datetime) -> tuple[str, str]:
+        """Return (satellite_id, bucket_url) of the GOES-East satellite at ``when``."""
+        if when >= cls.goes19_cutover:
+            return "GOES-19", cls.goes19_bucket_url
+        return "GOES-16", cls.bucket_url
+
+    @classmethod
+    def _bucket_for_key(cls, key: str) -> str:
+        match = cls.satellite_in_key.search(Path(key).name)
+        if match and match.group(1) == "19":
+            return cls.goes19_bucket_url
+        return cls.bucket_url
 
     def __init__(
         self,
@@ -49,6 +68,7 @@ class NOAAAWSGOESClient:
     ) -> Optional[Dict[str, Any]]:
         del storm_intensity
         target_time = target_time.astimezone(timezone.utc)
+        satellite_id, _ = self._satellite_for_time(target_time)
         # Recoverable per-frame failures (network, corrupt file, patch off the
         # raster edge) become an explicit None so the manifest marks the frame
         # "missing" (NFR1). Missing-dependency RuntimeErrors are NOT caught:
@@ -74,7 +94,7 @@ class NOAAAWSGOESClient:
             )
             return None
         return {
-            "satellite_id": "GOES-16",
+            "satellite_id": satellite_id,
             "collection": "NOAA AWS ABI-L2-MCMIPF",
             "bands": self.bands,
             "matched_time_utc": candidate["time"].isoformat(),
@@ -90,7 +110,8 @@ class NOAAAWSGOESClient:
         day = target_time.timetuple().tm_yday
         prefix = f"ABI-L2-MCMIPF/{year}/{day:03d}/{target_time.hour:02d}/"
         query = urllib.parse.urlencode({"list-type": "2", "prefix": prefix})
-        with urllib.request.urlopen(f"{self.bucket_url}/?{query}", timeout=60) as response:
+        _, bucket_url = self._satellite_for_time(target_time)
+        with urllib.request.urlopen(f"{bucket_url}/?{query}", timeout=60) as response:
             root = ET.fromstring(response.read())
         keys = [
             item.text
@@ -122,7 +143,7 @@ class NOAAAWSGOESClient:
                 return destination
             except Exception:
                 destination.unlink()
-        url = f"{self.bucket_url}/{urllib.parse.quote(key)}"
+        url = f"{self._bucket_for_key(key)}/{urllib.parse.quote(key)}"
         partial = destination.with_suffix(destination.suffix + ".part")
         if partial.exists():
             partial.unlink()
