@@ -5,10 +5,10 @@
     "description": "Naive alert solely based on local precipitation gauge readings.",
     "metrics": {
       "hits": 0,
-      "misses": 0,
+      "misses": 1,
       "false_alarms": 0,
-      "correct_negatives": 0,
-      "total": 0,
+      "correct_negatives": 4,
+      "total": 5,
       "pod": 0.0,
       "far": 0.0,
       "csi": 0.0,
@@ -17,7 +17,7 @@
       "f1_score": 0.0,
       "precision": 0.0,
       "recall": 0.0,
-      "accuracy": 0.0
+      "accuracy": 0.8
     },
     "csi": 0.0,
     "pod": 0.0,
@@ -31,10 +31,10 @@
     "description": "Operational NWS regional runoff threshold comparison.",
     "metrics": {
       "hits": 0,
-      "misses": 0,
+      "misses": 1,
       "false_alarms": 0,
-      "correct_negatives": 0,
-      "total": 0,
+      "correct_negatives": 4,
+      "total": 5,
       "pod": 0.0,
       "far": 0.0,
       "csi": 0.0,
@@ -43,7 +43,7 @@
       "f1_score": 0.0,
       "precision": 0.0,
       "recall": 0.0,
-      "accuracy": 0.0
+      "accuracy": 0.8
     },
     "csi": 0.0,
     "pod": 0.0,
@@ -57,10 +57,10 @@
     "description": "LSTM sequence model over GHCNh precipitation, temperature, pressure, wind.",
     "metrics": {
       "hits": 0,
-      "misses": 0,
+      "misses": 1,
       "false_alarms": 0,
-      "correct_negatives": 0,
-      "total": 0,
+      "correct_negatives": 4,
+      "total": 5,
       "pod": 0.0,
       "far": 0.0,
       "csi": 0.0,
@@ -69,7 +69,7 @@
       "f1_score": 0.0,
       "precision": 0.0,
       "recall": 0.0,
-      "accuracy": 0.0
+      "accuracy": 0.8
     },
     "csi": 0.0,
     "pod": 0.0,
@@ -83,10 +83,10 @@
     "description": "Fuses weather sequences with DEM elevation, slope, aspect, and flow accumulation.",
     "metrics": {
       "hits": 0,
-      "misses": 0,
+      "misses": 1,
       "false_alarms": 0,
-      "correct_negatives": 0,
-      "total": 0,
+      "correct_negatives": 4,
+      "total": 5,
       "pod": 0.0,
       "far": 0.0,
       "csi": 0.0,
@@ -95,7 +95,7 @@
       "f1_score": 0.0,
       "precision": 0.0,
       "recall": 0.0,
-      "accuracy": 0.0
+      "accuracy": 0.8
     },
     "csi": 0.0,
     "pod": 0.0,
@@ -109,10 +109,10 @@
     "description": "Full multimodal fusion with GOES-16 ABI storm trajectories and explicit missing-frame masking.",
     "metrics": {
       "hits": 0,
-      "misses": 0,
+      "misses": 1,
       "false_alarms": 0,
-      "correct_negatives": 0,
-      "total": 0,
+      "correct_negatives": 4,
+      "total": 5,
       "pod": 0.0,
       "far": 0.0,
       "csi": 0.0,
@@ -121,7 +121,7 @@
       "f1_score": 0.0,
       "precision": 0.0,
       "recall": 0.0,
-      "accuracy": 0.0
+      "accuracy": 0.8
     },
     "csi": 0.0,
     "pod": 0.0,
@@ -135,10 +135,10 @@
     "description": "End-to-end warning pipeline combining multimodal AI with D8 hydrological downhill alert propagation.",
     "metrics": {
       "hits": 0,
-      "misses": 0,
+      "misses": 1,
       "false_alarms": 0,
-      "correct_negatives": 0,
-      "total": 0,
+      "correct_negatives": 4,
+      "total": 5,
       "pod": 0.0,
       "far": 0.0,
       "csi": 0.0,
@@ -147,7 +147,7 @@
       "f1_score": 0.0,
       "precision": 0.0,
       "recall": 0.0,
-      "accuracy": 0.0
+      "accuracy": 0.8
     },
     "csi": 0.0,
     "pod": 0.0,
@@ -161,10 +161,10 @@
     "description": "Alerts all stations within 25km radius regardless of terrain slope or watershed boundaries.",
     "metrics": {
       "hits": 0,
-      "misses": 0,
+      "misses": 1,
       "false_alarms": 0,
-      "correct_negatives": 0,
-      "total": 0,
+      "correct_negatives": 4,
+      "total": 5,
       "pod": 0.0,
       "far": 0.0,
       "csi": 0.0,
@@ -173,7 +173,7 @@
       "f1_score": 0.0,
       "precision": 0.0,
       "recall": 0.0,
-      "accuracy": 0.0
+      "accuracy": 0.8
     },
     "csi": 0.0,
     "pod": 0.0,
