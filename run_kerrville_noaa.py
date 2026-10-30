@@ -70,7 +70,7 @@ def _preflight(
     total_bytes = 0
     for item in candidates.values():
         request = urllib.request.Request(
-            f"{client.bucket_url}/{item['key']}", method="HEAD"
+            f"{client._bucket_for_key(str(item['key']))}/{item['key']}", method="HEAD"
         )
         with urllib.request.urlopen(request, timeout=60) as response:
             item["size_bytes"] = int(response.headers.get("Content-Length", "0"))
@@ -94,7 +94,8 @@ def main() -> int:
     target_time = datetime(2025, 7, 4, 10, tzinfo=timezone.utc)
     items, total_bytes = _preflight(client, target_time, 450.0)
     total_gb = total_bytes / (1024 ** 3)
-    print(f"GOES-East source: {client.bucket_url}")
+    satellite_id, source_url = client._satellite_for_time(target_time)
+    print(f"GOES-East source: {satellite_id} ({source_url})")
     print(f"Candidate files to download: {len(items)}")
     print(f"Total download size: {total_gb:.3f} GB")
     if total_gb > args.max_gb:
