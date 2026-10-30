@@ -237,3 +237,46 @@ class D8FlowRouter:
             curr_r, curr_c = next_r, next_c
 
         return path
+
+    def upstream_cells(
+        self, fdir: List[List[int]], target_row: int, target_col: int
+    ) -> Set[Tuple[int, int]]:
+        """Return all cells whose D8 drainage eventually reaches ``target``."""
+        rows = len(fdir)
+        cols = len(fdir[0]) if rows else 0
+        upstream: Set[Tuple[int, int]] = {(target_row, target_col)}
+        changed = True
+        while changed:
+            changed = False
+            for row in range(rows):
+                for col in range(cols):
+                    if (row, col) in upstream:
+                        continue
+                    code = fdir[row][col]
+                    next_cell = self._downstream_cell(code, row, col, rows, cols)
+                    if next_cell in upstream:
+                        upstream.add((row, col))
+                        changed = True
+        return upstream
+
+    @staticmethod
+    def _downstream_cell(
+        code: int, row: int, col: int, rows: int, cols: int
+    ) -> Optional[Tuple[int, int]]:
+        deltas = {
+            int(FlowDirectionD8.EAST): (0, 1),
+            int(FlowDirectionD8.SOUTHEAST): (1, 1),
+            int(FlowDirectionD8.SOUTH): (1, 0),
+            int(FlowDirectionD8.SOUTHWEST): (1, -1),
+            int(FlowDirectionD8.WEST): (0, -1),
+            int(FlowDirectionD8.NORTHWEST): (-1, -1),
+            int(FlowDirectionD8.NORTH): (-1, 0),
+            int(FlowDirectionD8.NORTHEAST): (-1, 1),
+        }
+        delta = deltas.get(code)
+        if delta is None:
+            return None
+        next_row, next_col = row + delta[0], col + delta[1]
+        if 0 <= next_row < rows and 0 <= next_col < cols:
+            return next_row, next_col
+        return None

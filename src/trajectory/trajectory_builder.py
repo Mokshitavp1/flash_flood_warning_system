@@ -33,6 +33,7 @@ class SatelliteTrajectorySequence:
     valid_mask: List[int]  # 1 if frame is present and valid ('ok'), 0 if 'missing'
     frame_statuses: List[str]  # "ok" or "missing" for each frame
     coverage_rate: float  # Percentage of valid frames (0.0 to 1.0)
+    synthetic: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -45,6 +46,7 @@ class SatelliteTrajectorySequence:
             "valid_mask": self.valid_mask,
             "frame_statuses": self.frame_statuses,
             "coverage_rate": self.coverage_rate,
+            "synthetic": self.synthetic,
             "shape": [
                 len(self.frames_data),
                 len(self.frames_data[0]) if self.frames_data else 0,
@@ -139,6 +141,7 @@ class SatelliteTrajectoryBuilder:
                         patch_mean_ir=image_result.get("patch_mean_ir"),
                         cloud_fraction=image_result.get("cloud_fraction"),
                         source_file_name=image_result.get("source_file_name"),
+                        synthetic=image_result.get("synthetic", self.gee_client.synthetic),
                     )
                     manifest.add_record(manifest_item)
             else:
@@ -163,6 +166,7 @@ class SatelliteTrajectoryBuilder:
                         patch_mean_ir=None,
                         cloud_fraction=None,
                         source_file_name=None,
+                        synthetic=self.gee_client.synthetic,
                     )
                     manifest.add_record(manifest_item)
 
@@ -179,4 +183,5 @@ class SatelliteTrajectoryBuilder:
             valid_mask=valid_mask,
             frame_statuses=frame_statuses,
             coverage_rate=round(coverage, 3),
+            synthetic=self.gee_client.synthetic,
         )

@@ -32,6 +32,15 @@ class TestAlerts(unittest.TestCase):
                 1,
                 1,
             ),
+            routing_grid_loader=lambda _trigger, candidate: (
+                [
+                    [120.0, 100.0, 80.0],
+                    [119.0, 99.0, 79.0],
+                    [118.0, 98.0, 78.0],
+                ],
+                (0, 0),
+                (0, 2) if candidate.station_id == "STN_VALLEY" else (1, 0),
+            ),
         )
         self.logger = AlertLogger()
 
@@ -64,7 +73,11 @@ class TestAlerts(unittest.TestCase):
 
     def test_circular_buffer_triggers_uphill_false_alarm(self):
         """FR5.1: Circular buffer baseline sends false alarms uphill because it ignores terrain."""
-        circ_engine = CircularBufferAlertEngine(radius_km=25.0, trigger_risk_threshold=0.65)
+        circ_engine = CircularBufferAlertEngine(
+            radius_km=25.0,
+            elevated_threshold_m=2000.0,
+            trigger_risk_threshold=0.65,
+        )
         candidates = [self.downhill_valley_station, self.uphill_ridge_station]
 
         alerts = circ_engine.evaluate_and_propagate(
@@ -88,8 +101,16 @@ class TestAlerts(unittest.TestCase):
         """FR5.2: DEM Flow-routing alerts downstream valley, but NEVER alerts uphill peak."""
         flow_engine = DEMFlowRoutingAlertEngine(
             dem_pipeline=self.dem_pipeline,
+            elevated_threshold_m=2000.0,
             trigger_risk_threshold=0.65,
+            flow_decay_alpha=0.08,
+            accumulation_boost_beta=0.15,
             min_alert_strength=0.2,
+            wave_speed_km_h=7.92,
+            max_reach_km=60.0,
+            max_steps=120,
+            min_lead_time_minutes=0.0,
+            max_lead_time_minutes=180.0,
         )
         candidates = [self.downhill_valley_station, self.uphill_ridge_station]
 

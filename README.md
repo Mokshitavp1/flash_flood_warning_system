@@ -76,6 +76,49 @@ Station_ID|Station_name|Latitude|Longitude|Elevation|Year|Month|Day|Hour|Minute|
 
 ## 4. How to Run the Pipeline
 
+### Python environment and dependencies
+
+The Python pipeline requires **Python 3.10 through 3.13**. Python 3.10 is the
+minimum because the source uses modern type-union syntax. Create an isolated
+environment and install the bounded runtime dependencies before running the
+pipeline:
+
+```bash
+python -m venv .venv
+# Windows:
+.venv\Scripts\activate
+# macOS/Linux:
+# source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+`requirements.txt` includes the numerical, DEM, projection, NetCDF, and Google
+Earth Engine packages used by the Python sources. The pipeline can run in
+explicit synthetic satellite mode without Earth Engine credentials, but real
+Earth Engine access additionally requires local Earth Engine authentication.
+
+### Training and held-out evaluation
+
+The pure-Python multimodal network is an inference prototype with deterministic
+weights. To train a real learned risk backend, prepare at least three
+event-disjoint labeled dates and run:
+
+```bash
+python run_training.py
+```
+
+This uses regularized logistic SGD over the canonical multimodal features,
+saves `outputs/training/learned_risk_model.json`, reloads-compatible weights,
+and reports validation plus held-out test metrics. The event split manifest is
+saved to `outputs/training/event_split.json`.
+
+The end-to-end pipeline applies the same rule: it trains on the train events,
+selects the best epoch using validation events, and sends only the held-out
+test events to Stage 6 evaluation. If fewer than three distinct labeled event
+dates are available, Stage 6 is explicitly skipped instead of evaluating
+training samples.
+
 ### Option A: Complete Pipeline Execution (All 6 Stages)
 ```bash
 python3 run_pipeline.py
@@ -94,6 +137,64 @@ observations, so this command completes in a bounded amount of time:
 ```bash
 python run_pipeline.py data
 ```
+
+For a real-data demo, run the pipeline with the checked-in NOAA GHCNh files:
+
+```bash
+python run_pipeline.py data
+```
+
+The default satellite source is the public NOAA GOES AWS archive
+(`source: "NOAA_AWS"` in `configs/pipeline_config.json`), so this demo does
+**not** require Google Earth Engine credentials. It downloads real GOES
+NetCDF files and extracts station-centered patches; network access and the
+runtime dependencies in `requirements.txt` are required.
+
+If source weather files, real satellite files, or a real DEM are unavailable,
+the pipeline uses explicit synthetic fixtures for the affected stage. Every
+affected object and persisted report includes `synthetic: true`, and the
+console and coverage reports label the result as **not real-world coverage**.
+Synthetic execution must not be presented as NOAA, GOES, or USGS coverage.
+
+The `GEEClient` is an optional Earth Engine integration and never falls back to
+synthetic frames implicitly. Tests or synthetic local demos must construct it
+with `simulation=True`; the normal real-data demo uses
+`NOAAAWSGOESClient`.
+
+The dashboard's **Run Pipeline** action calls `POST /api/pipeline/run`, starts
+the Python pipeline as a tracked background job, polls
+`GET /api/pipeline/jobs/:jobId`, and reloads artifacts only after successful
+completion. Set `PIPELINE_PYTHON` if the `python` command is not the intended
+interpreter. Invalid or missing JSON/CSV artifacts produce an HTTP 500 response
+with a specific validation error instead of being treated as empty data.
+
+### Optional Google Earth Engine setup
+
+The default production satellite client is `NOAAAWSGOESClient`, which reads
+public NOAA AWS data and does not require Earth Engine credentials. Use
+`GEEClient` only when you specifically need a configured Earth Engine
+collection. Authentication must be performed outside the repository:
+
+```bash
+python -m pip install earthengine-api
+earthengine authenticate
+# PowerShell:
+$env:EARTHENGINE_PROJECT = "your-google-cloud-project"
+```
+
+Alternatively, configure a service account through
+`GOOGLE_APPLICATION_CREDENTIALS`, `EARTHENGINE_SERVICE_ACCOUNT`, and
+`EARTHENGINE_PROJECT`:
+
+```powershell
+$env:GOOGLE_APPLICATION_CREDENTIALS = "C:\secure\gee-service-account.json"
+$env:EARTHENGINE_SERVICE_ACCOUNT = "gee-reader@your-google-cloud-project.iam.gserviceaccount.com"
+$env:EARTHENGINE_PROJECT = "your-google-cloud-project"
+```
+
+The client fails clearly when credentials or the Cloud project are missing and
+never silently switches to synthetic data. Do not commit credential files or
+tokens.
 
 It prints the six pipeline stages, satellite-frame coverage and NFR1 result,
 terrain features, the warning/rainfall/model evaluation table, and writes

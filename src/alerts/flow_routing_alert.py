@@ -12,7 +12,6 @@ import math
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.alerts.alert_logger import AlertEventLog, AlertLogger
-from src.alerts.circular_buffer import haversine_distance_km
 from src.ingestion.ghcnh_parser import StationMetadata
 from src.terrain.dem_pipeline import DEMPipeline, StationTerrainFeatures
 
@@ -23,13 +22,17 @@ class DEMFlowRoutingAlertEngine:
     def __init__(
         self,
         dem_pipeline: DEMPipeline,
-        elevated_threshold_m: float = 2000.0,
-        trigger_risk_threshold: float = 0.65,
-        flow_decay_alpha: float = 0.04,  # Decay factor per km along river/channel
-        accumulation_boost_beta: float = 0.12,  # Boost as tributary volume merges
-        min_alert_strength: float = 0.30,  # Minimum strength to dispatch warning
-        wave_speed_km_h: float = 7.2,  # Flash flood channel wave speed (~2.0 m/s)
-        max_reach_km: float = 65.0,  # Max downstream tracing distance
+        elevated_threshold_m: float,
+        trigger_risk_threshold: float,
+        flow_decay_alpha: float,
+        accumulation_boost_beta: float,
+        min_alert_strength: float,
+        wave_speed_km_h: float,
+        max_reach_km: float,
+        max_steps: int,
+        min_lead_time_minutes: float,
+        max_lead_time_minutes: float,
+        synthetic: bool = False,
     ):
         self.dem_pipeline = dem_pipeline
         self.elevated_threshold_m = elevated_threshold_m
@@ -39,6 +42,10 @@ class DEMFlowRoutingAlertEngine:
         self.min_alert_strength = min_alert_strength
         self.wave_speed_km_h = wave_speed_km_h
         self.max_reach_km = max_reach_km
+        self.max_steps = max_steps
+        self.min_lead_time_minutes = min_lead_time_minutes
+        self.max_lead_time_minutes = max_lead_time_minutes
+        self.synthetic = synthetic
 
     def is_in_downstream_watershed(
         self,
@@ -50,42 +57,12 @@ class DEMFlowRoutingAlertEngine:
         Determines if candidate station lies downstream along the trigger station's drainage axis.
         Returns (is_downstream, channel_distance_km).
         """
-        # Condition 1: Candidate must be significantly lower in elevation than trigger station (downhill)
-        elev_drop_m = trigger_station.elevation_m - candidate_station.elevation_m
-        if elev_drop_m < 50.0:
-            return False, 0.0
-
-        # Straight-line distance
-        dist_km = haversine_distance_km(
-            trigger_station.latitude,
-            trigger_station.longitude,
-            candidate_station.latitude,
-            candidate_station.longitude,
+        routing = self.dem_pipeline.trace_station_to_station(
+            trigger_station, candidate_station, max_steps=self.max_steps
         )
-
-        if dist_km > self.max_reach_km or dist_km < 0.5:
+        if routing is None or routing["distance_km"] > self.max_reach_km:
             return False, 0.0
-
-        # Bearing from trigger to candidate
-        lat1 = math.radians(trigger_station.latitude)
-        lat2 = math.radians(candidate_station.latitude)
-        d_lon = math.radians(candidate_station.longitude - trigger_station.longitude)
-
-        y = math.sin(d_lon) * math.cos(lat2)
-        x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(d_lon)
-        bearing = (math.degrees(math.atan2(y, x)) + 360.0) % 360.0
-
-        # Sinuosity factor along mountain canyons (approx 1.25x straight-line distance)
-        channel_dist_km = dist_km * 1.25
-
-        # Downhill verification:
-        # Water flows downhill. Candidate is downhill (elev_drop_m > 50).
-        # Check that the slope gradient between stations is negative (downhill descent: elev_drop / dist > 0)
-        descent_gradient = elev_drop_m / (dist_km * 1000.0)
-        if descent_gradient > 0.005:  # At least 0.5% average downstream descent
-            return True, round(channel_dist_km, 2)
-
-        return False, 0.0
+        return True, round(routing["distance_km"], 2)
 
     def evaluate_and_propagate(
         self,
@@ -98,7 +75,7 @@ class DEMFlowRoutingAlertEngine:
         """
         Traces D8 hydrological descent and alerts downstream valley communities.
         """
-        if not self.dem_pipeline.is_station_elevated(trigger_station):
+        if trigger_station.elevation_m < self.elevated_threshold_m:
             return []
         if trigger_risk_score < self.trigger_risk_threshold:
             return []
@@ -110,12 +87,13 @@ class DEMFlowRoutingAlertEngine:
             if candidate.station_id == trigger_station.station_id:
                 continue
 
-            in_drainage, channel_dist_km = self.is_in_downstream_watershed(
-                trigger_station, candidate
+            routing = self.dem_pipeline.trace_station_to_station(
+                trigger_station, candidate, max_steps=self.max_steps
             )
 
-            if not in_drainage:
+            if routing is None or routing["distance_km"] > self.max_reach_km:
                 continue  # Skip stations not downstream in the watershed!
+            channel_dist_km = routing["distance_km"]
 
             # Compute downstream alert strength decay and accumulation boost (FR5.2)
             # Alert(d) = Risk * exp(-alpha * d) * (1 + beta * log(1 + Accum))
@@ -130,6 +108,12 @@ class DEMFlowRoutingAlertEngine:
             # Hydrodynamic wave arrival lead time
             lead_time_hours = channel_dist_km / self.wave_speed_km_h
             lead_time_minutes = round(lead_time_hours * 60.0, 1)
+            if not (
+                self.min_lead_time_minutes
+                <= lead_time_minutes
+                <= self.max_lead_time_minutes
+            ):
+                continue
 
             alert = AlertEventLog(
                 alert_id=f"alert_v1_{trigger_station.station_id}_{candidate.station_id}_{timestamp_utc[:13]}",
@@ -146,8 +130,9 @@ class DEMFlowRoutingAlertEngine:
                 alert_strength=round(alert_strength, 3),
                 estimated_arrival_lead_time_minutes=lead_time_minutes,
                 dispatched_timestamp_utc=timestamp_utc,
-                flow_path_steps=int(channel_dist_km / 0.1),
+                flow_path_steps=routing["flow_path_steps"],
                 in_watershed=True,
+                synthetic=self.synthetic,
             )
             alerts.append(alert)
             if logger:

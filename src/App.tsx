@@ -21,11 +21,71 @@ import {
   ChevronRight,
   Sliders,
 } from 'lucide-react';
-import { Station, TrajectoryFrame, AlertEvent, PipelineData } from './types/pipeline';
+import { ActiveTab, ParsedPsvOutput, PipelineData, Station } from './types/pipeline';
+
+function displayMetric(value: number | null, unit = ''): string {
+  return value === null ? 'Missing' : `${value}${unit}`;
+}
+
+export function parsePsvInput(input: string): ParsedPsvOutput {
+  const parts = input.trim().split('|').map((part) => part.trim());
+  const psvColumns = [
+    'Station_ID', 'Station_name', 'Latitude', 'Longitude', 'Elevation',
+    'Year', 'Month', 'Day', 'Hour', 'Minute', 'temperature',
+    'dew_point_temperature', 'relative_humidity', 'wind_direction',
+    'wind_speed', 'wind_gust', 'station_level_pressure',
+    'sea_level_pressure', 'precipitation', 'precipitation_1_hour',
+    'precipitation_3_hour', 'precipitation_6_hour', 'precipitation_24_hour',
+    'present_weather', 'quality_flag',
+  ] as const;
+  if (parts.length !== psvColumns.length) {
+    return { error: `Invalid GHCNh format. Expected exactly ${psvColumns.length} pipe-separated columns; received ${parts.length}.` };
+  }
+  const requiredTextFields: Array<[number, string]> = [
+    [0, 'station ID'], [1, 'station name'], [5, 'year'], [6, 'month'],
+    [7, 'day'], [8, 'hour'], [9, 'minute'],
+  ];
+  const missingField = requiredTextFields.find(([index]) => parts[index] === '');
+  if (missingField) return { error: `Invalid GHCNh format: ${missingField[1]} is required.` };
+  const numericColumns: Array<[number, string]> = [
+    [2, 'latitude'], [3, 'longitude'], [4, 'elevation'], [5, 'year'],
+    [6, 'month'], [7, 'day'], [8, 'hour'], [9, 'minute'],
+  ];
+  for (const [index, label] of numericColumns) {
+    if (!Number.isFinite(Number.parseFloat(parts[index]))) {
+      return { error: `Invalid GHCNh format: ${label} must be numeric.` };
+    }
+  }
+  const month = Number.parseInt(parts[6], 10);
+  const day = Number.parseInt(parts[7], 10);
+  const hour = Number.parseInt(parts[8], 10);
+  const minute = Number.parseInt(parts[9], 10);
+  if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) {
+    return { error: 'Invalid GHCNh format: timestamp fields are out of range.' };
+  }
+  const parseOptionalNumber = (value: string): number | null => {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  return {
+    stationId: parts[0],
+    stationName: parts[1],
+    latitude: parseOptionalNumber(parts[2]),
+    longitude: parseOptionalNumber(parts[3]),
+    elevationM: parseOptionalNumber(parts[4]),
+    date: `${parts[5]}-${parts[6].padStart(2, '0')}-${parts[7].padStart(2, '0')} ${parts[8].padStart(2, '0')}:${parts[9].padStart(2, '0')} UTC`,
+    temperatureC: parseOptionalNumber(parts[10]),
+    relativeHumidity: parseOptionalNumber(parts[12]),
+    stationPressureHpa: parseOptionalNumber(parts[16]),
+    precipitation1hMm: parseOptionalNumber(parts[19]),
+    weatherCode: parts[23] || 'None',
+    qcFlag: parts[24] || 'V',
+  };
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<
-    'simulation' | 'trajectory' | 'ingestion' | 'model' | 'ablation' | 'runner' | 'overview'
+    ActiveTab
   >('simulation');
   const [alertMethod, setAlertMethod] = useState<'v0' | 'v1'>('v1');
   const [pipelineData, setPipelineData] = useState<PipelineData | null>(null);
@@ -38,28 +98,39 @@ export default function App() {
   const [customPsvInput, setCustomPsvInput] = useState<string>(
     'USW00093037|ALBUQUERQUE FOOTHILLS|35.1522|-106.4851|2420.0|2023|08|15|16|00|22.4|18.5|78.0|240|12.8|19.5|836.4|1006.2|38.0|38.0|48.5|52.0||TSRA|V'
   );
-  const [parsedPsvOutput, setParsedPsvOutput] = useState<any>(null);
+  const [parsedPsvOutput, setParsedPsvOutput] = useState<ParsedPsvOutput | null>(null);
   const stations = pipelineData?.stations ?? [];
   const trajectoryFrames = pipelineData?.trajectoryFrames ?? [];
   const alerts = pipelineData?.alerts ?? [];
   const ablationScores = pipelineData?.ablationScores ?? [];
 
+  const loadPipelineData = async () => {
+    setLoadError(null);
+    try {
+      const response = await fetch('/api/pipeline-data');
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const data = await response.json() as PipelineData;
+      setPipelineData(data);
+      setSelectedStation(data.stations[0] ?? null);
+    } catch (error: unknown) {
+      setLoadError(error instanceof Error ? error.message : 'Unable to load pipeline data.');
+    }
+  };
+
   useEffect(() => {
-    fetch('/api/pipeline-data')
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(await response.text());
-        }
-        return response.json() as Promise<PipelineData>;
-      })
-      .then((data) => {
-        setPipelineData(data);
-        setSelectedStation(data.stations[0] ?? null);
-      })
-      .catch((error: unknown) => {
-        setLoadError(error instanceof Error ? error.message : 'Unable to load pipeline data.');
-      });
+    void loadPipelineData();
   }, []);
+
+  /*
+   * Keep the initial request separate from pipeline execution so a failed
+   * acquisition can be retried without refreshing the entire browser page.
+   */
+  const refreshPipelineData = async () => {
+    setPipelineData(null);
+    await loadPipelineData();
+  };
 
   const [pipelineLogs, setPipelineLogs] = useState<string[]>([
     'Pipeline initialized. Ready to execute or ingest NOAA GHCNh files from data/.',
@@ -70,58 +141,77 @@ export default function App() {
 
   // Handle animation timer for flood wave simulation
   useEffect(() => {
-    let interval: any = null;
+    let interval: ReturnType<typeof setInterval> | undefined;
     if (isSimPlaying) {
       interval = setInterval(() => {
         setSimTimeMinutes((prev) => (prev >= 120 ? 0 : prev + 5));
       }, 650);
     }
-    return () => clearInterval(interval);
+    return () => {
+      if (interval !== undefined) clearInterval(interval);
+    };
   }, [isSimPlaying]);
 
-  const handleRunPipeline = () => {
+  const handleRunPipeline = async () => {
     setIsRunningPipeline(true);
     setPipelineLogs((prev) => [
       ...prev,
       `>>> [${new Date().toISOString().slice(11, 19)}] PIPELINE EXECUTION INITIATED <<<`,
-      'The browser reads the latest persisted Python pipeline artifacts; run `python run_pipeline.py data` in the backend to refresh them.',
-      `>>> [${new Date().toISOString().slice(11, 19)}] LIVE ARTIFACT REFRESH REQUESTED <<<`,
     ]);
-    setTimeout(() => {
+    try {
+      const start = await fetch('/api/pipeline/run', { method: 'POST' });
+      const startBody = await start.json() as { jobId?: string; error?: string };
+      if (!start.ok || !startBody.jobId) throw new Error(startBody.error ?? 'Unable to start pipeline.');
+      let finished = false;
+      while (!finished) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        const statusResponse = await fetch(`/api/pipeline/jobs/${startBody.jobId}`);
+        const job = await statusResponse.json() as {
+          status: 'queued' | 'running' | 'completed' | 'failed';
+          logs: string[];
+          error?: string;
+        };
+        setPipelineLogs((prev) => [...prev, ...job.logs.slice(-5)]);
+        finished = job.status === 'completed' || job.status === 'failed';
+        if (finished && job.status === 'failed') throw new Error(job.error ?? 'Pipeline failed.');
+      }
+      setPipelineLogs((prev) => [...prev, 'Pipeline completed. Reloading persisted artifacts.']);
+      const refreshed = await fetch('/api/pipeline-data');
+      if (!refreshed.ok) throw new Error(await refreshed.text());
+      const data = await refreshed.json() as PipelineData;
+      setPipelineData(data);
+      setSelectedStation(data.stations[0] ?? null);
+    } catch (error) {
+      setPipelineLogs((prev) => [...prev, `Pipeline failed: ${error instanceof Error ? error.message : 'Unknown error.'}`]);
+    } finally {
       setIsRunningPipeline(false);
-    }, 1000);
+    }
   };
 
   const handleParsePsv = () => {
-    const parts = customPsvInput.trim().split('|');
-    if (parts.length < 20) {
-      setParsedPsvOutput({ error: 'Invalid GHCNh format. Expected at least 25 pipe-separated columns.' });
-      return;
-    }
-    const parseOptionalNumber = (value: string): number | null => {
-      const parsed = Number.parseFloat(value);
-      return Number.isFinite(parsed) ? parsed : null;
-    };
-    setParsedPsvOutput({
-      stationId: parts[0],
-      stationName: parts[1],
-      latitude: parseOptionalNumber(parts[2]),
-      longitude: parseOptionalNumber(parts[3]),
-      elevationM: parseOptionalNumber(parts[4]),
-      date: `${parts[5]}-${parts[6].padStart(2, '0')}-${parts[7].padStart(2, '0')} ${parts[8].padStart(2, '0')}:${parts[9].padStart(2, '0')} UTC`,
-      temperatureC: parseOptionalNumber(parts[10]),
-      relativeHumidity: parseOptionalNumber(parts[12]),
-      stationPressureHpa: parseOptionalNumber(parts[16]),
-      precipitation1hMm: parseOptionalNumber(parts[19]),
-      weatherCode: parts[23] || 'None',
-      qcFlag: parts[24] || 'V',
-    });
+    setParsedPsvOutput(parsePsvInput(customPsvInput));
   };
 
   const currentFrame = trajectoryFrames[selectedFrameIndex];
 
   if (loadError) {
-    return <div className="min-h-screen bg-[#EFF1ED] p-8 text-[#7C2D12]">Real pipeline data could not be loaded: {loadError}</div>;
+    return (
+      <div className="min-h-screen bg-[#EFF1ED] p-8 text-[#7C2D12]">
+        <h1 className="mb-3 text-xl font-semibold">Real model data is unavailable</h1>
+        <p className="max-w-3xl">{loadError}</p>
+        <p className="mt-3 max-w-3xl text-sm">
+          Run the pipeline with real weather, satellite, terrain, and labeled event inputs.
+          Synthetic demo data is intentionally not shown as trained-model output.
+        </p>
+        <button
+          type="button"
+          onClick={() => void refreshPipelineData()}
+          className="mt-5 rounded bg-[#717744] px-4 py-2 text-sm font-semibold text-white"
+        >
+          Retry loading model data
+        </button>
+      </div>
+    );
   }
   if (!pipelineData || !selectedStation || !currentFrame) {
     return <div className="min-h-screen bg-[#EFF1ED] p-8 text-[#373D20]">Loading real pipeline data...</div>;
@@ -235,7 +325,7 @@ export default function App() {
         ].map((tab) => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
+            onClick={() => setActiveTab(tab.id as ActiveTab)}
             className={`whitespace-nowrap pb-1 ${
               activeTab === tab.id ? 'text-[#373D20] border-b-2 border-[#717744] font-bold' : ''
             }`}
@@ -417,7 +507,7 @@ export default function App() {
                           </span>
                         </div>
                         <div className="text-[10px] text-[#766153] font-mono mt-0.5">
-                          {station.elevationM} m · {station.currentPrecipMm} mm
+                          {displayMetric(station.elevationM, ' m')} · {displayMetric(station.currentPrecipMm, ' mm')}
                         </div>
 
                         {/* Status Label (Clean Unboxed Text per Constitution) */}
@@ -485,19 +575,19 @@ export default function App() {
                   <div className="grid grid-cols-2 gap-3 pt-3 border-t border-[#BCBD8B]/30 text-xs font-mono">
                     <div>
                       <span className="text-[#766153] text-[10px] block">Elevation</span>
-                      <span className="text-[#373D20] font-bold text-sm">{selectedStation.elevationM} m</span>
+                      <span className="text-[#373D20] font-bold text-sm">{displayMetric(selectedStation.elevationM, ' m')}</span>
                     </div>
                     <div>
                       <span className="text-[#766153] text-[10px] block">Local Rain Gauge</span>
-                      <span className="text-[#373D20] font-bold text-sm">{selectedStation.currentPrecipMm} mm/h</span>
+                      <span className="text-[#373D20] font-bold text-sm">{displayMetric(selectedStation.currentPrecipMm, ' mm/h')}</span>
                     </div>
                     <div>
                       <span className="text-[#766153] text-[10px] block">Topographic Slope</span>
-                      <span className="text-[#373D20] font-bold text-sm">{selectedStation.slopeDeg}°</span>
+                      <span className="text-[#373D20] font-bold text-sm">{displayMetric(selectedStation.slopeDeg, '°')}</span>
                     </div>
                     <div>
                       <span className="text-[#766153] text-[10px] block">Contributing Cells</span>
-                      <span className="text-[#373D20] font-bold text-sm">{selectedStation.flowAccumCells}</span>
+                      <span className="text-[#373D20] font-bold text-sm">{displayMetric(selectedStation.flowAccumCells)}</span>
                     </div>
                   </div>
 
@@ -740,7 +830,11 @@ export default function App() {
                   </button>
                 </div>
 
-                {parsedPsvOutput && (
+                {parsedPsvOutput && ('error' in parsedPsvOutput ? (
+                  <div className="p-4 rounded border border-[#C2410C]/40 bg-[#FFF7ED] text-xs font-mono text-[#9A3412]">
+                    {parsedPsvOutput.error}
+                  </div>
+                ) : (
                   <div className="p-4 rounded border border-[#BCBD8B]/40 bg-[#F9FAF7] text-xs font-mono grid grid-cols-2 md:grid-cols-4 gap-3">
                     <div>
                       <span className="text-[#766153] block text-[10px]">Station</span>
@@ -759,7 +853,7 @@ export default function App() {
                       <strong className="text-[#373D20]">{parsedPsvOutput.qcFlag} (Accepted)</strong>
                     </div>
                   </div>
-                )}
+                ))}
               </div>
             </div>
           </div>

@@ -28,7 +28,7 @@ class MockGEEWithForcedDropouts(GEEClient):
     """Controlled GEE mock that returns observations for select timesteps and gaps for others."""
 
     def __init__(self, missing_indices: List[int], patch_size: int = 32):
-        super().__init__(patch_size=patch_size)
+        super().__init__(patch_size=patch_size, simulation=True)
         self.missing_indices = set(missing_indices)
         self.call_count = 0
 

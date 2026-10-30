@@ -35,6 +35,7 @@ class AlertEventLog:
     dispatched_timestamp_utc: str
     flow_path_steps: int = 0
     in_watershed: bool = True
+    synthetic: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -99,6 +100,7 @@ class AlertLogger:
             "dispatched_timestamp_utc",
             "flow_path_steps",
             "in_watershed",
+            "synthetic",
         ]
         with open(target, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)

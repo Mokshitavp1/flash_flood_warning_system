@@ -197,9 +197,21 @@ class AblationHarness:
 
         return results
 
-    def export_report_json(self, results: Dict[str, AblationStageResult], file_path: str | Path) -> None:
+    def export_report_json(
+        self,
+        results: Dict[str, AblationStageResult],
+        file_path: str | Path,
+        synthetic: bool = False,
+    ) -> None:
         target = Path(file_path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        serializable = {k: v.to_dict() for k, v in results.items()}
+        serializable = {
+            "synthetic": synthetic,
+            "coverage_notice": (
+                "Synthetic data used; evaluation is not real-world coverage."
+                if synthetic else "Evaluation uses real source coverage."
+            ),
+            "results": {k: v.to_dict() for k, v in results.items()},
+        }
         with open(target, "w", encoding="utf-8") as f:
             json.dump(serializable, f, indent=2)

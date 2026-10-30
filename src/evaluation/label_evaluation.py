@@ -91,7 +91,7 @@ def evaluate_labeled_samples(
     model_threshold: float = 0.65,
     onset_timestamp: str = "2025-07-04T08:00:00+00:00",
 ) -> List[Dict[str, object]]:
-    """Evaluate warnings on samples with valid Kerrville pre-onset labels."""
+    """Evaluate warnings on every sample with a matching station/timestamp label."""
     evaluated = []
     for sample, score in zip(samples, risk_scores):
         label = labels.get((sample.station_id, sample.timestamp_utc))

@@ -38,6 +38,7 @@ class MultimodalEventSample:
     # This is a mask, not a model feature.
     precipitation_missing_mask: List[int] = field(default_factory=list)
     rainfall_6h_mm: float = 0.0
+    synthetic: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -53,6 +54,7 @@ class MultimodalEventSample:
             "rainfall_3h_mm": self.rainfall_3h_mm,
             "elevation_m": self.elevation_m,
             "is_elevated_terrain": self.is_elevated_terrain,
+            "synthetic": self.synthetic,
         }
 
 
@@ -145,6 +147,7 @@ class StationAnchoredFloodDataset:
             rainfall_6h_mm=observation.precipitation_6h_mm or 0.0,
             elevation_m=station_meta.elevation_m,
             is_elevated_terrain=terrain.is_elevated_terrain,
+            synthetic=observation.synthetic or trajectory.synthetic or terrain.synthetic,
         )
 
     def split_train_val_test(

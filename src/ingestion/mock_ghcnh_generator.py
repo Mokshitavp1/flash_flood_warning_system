@@ -11,10 +11,11 @@ Supports:
 from __future__ import annotations
 
 import math
+import json
 import random
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 
 SAMPLE_STATIONS: List[Dict[str, Any]] = [
@@ -206,5 +207,9 @@ class MockGHCNhGenerator:
             with open(target, "w", encoding="utf-8") as f:
                 f.write(content)
             created_files.append(target)
+        (out_path / "synthetic_metadata.json").write_text(
+            json.dumps({"synthetic": True, "source": "MockGHCNhGenerator"}, indent=2),
+            encoding="utf-8",
+        )
 
         return created_files

@@ -14,6 +14,7 @@ export const INITIAL_STATIONS: Station[] = [
     currentPrecipMm: 52.4,
     currentTempC: 12.1,
     currentPressureHpa: 708.2,
+    availability: { precipitation: true, temperature: true, pressure: true, terrain: true },
     status: 'storm',
   },
   {
@@ -29,6 +30,7 @@ export const INITIAL_STATIONS: Station[] = [
     currentPrecipMm: 38.0,
     currentTempC: 18.5,
     currentPressureHpa: 772.4,
+    availability: { precipitation: true, temperature: true, pressure: true, terrain: true },
     status: 'storm',
   },
   {
@@ -44,6 +46,7 @@ export const INITIAL_STATIONS: Station[] = [
     currentPrecipMm: 0.0, // Zero local rain! Flood arrives from uphill
     currentTempC: 25.4,
     currentPressureHpa: 820.5,
+    availability: { precipitation: true, temperature: true, pressure: true, terrain: true },
     status: 'alert_downhill',
   },
   {
@@ -59,6 +62,7 @@ export const INITIAL_STATIONS: Station[] = [
     currentPrecipMm: 0.0,
     currentTempC: 29.1,
     currentPressureHpa: 852.1,
+    availability: { precipitation: true, temperature: true, pressure: true, terrain: true },
     status: 'alert_downhill',
   },
   {
@@ -74,6 +78,7 @@ export const INITIAL_STATIONS: Station[] = [
     currentPrecipMm: 2.1,
     currentTempC: 11.5,
     currentPressureHpa: 702.0,
+    availability: { precipitation: true, temperature: true, pressure: true, terrain: true },
     status: 'normal',
   },
 ];

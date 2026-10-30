@@ -34,7 +34,7 @@ class TestPipelineEndToEnd(unittest.TestCase):
 
             # Initialize and run pipeline
             runner = FlashFloodPipelineRunner(
-                satellite_client=GEEClient(seed=123),
+                satellite_client=GEEClient(seed=123, simulation=True),
                 dem_pipeline=DEMPipeline(
                     dem_loader=lambda _station: (
                         [

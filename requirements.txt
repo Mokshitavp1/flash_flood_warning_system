@@ -1,2 +1,8 @@
+# Supported runtime: Python >=3.10,<3.14
+# Keep geospatial/native dependencies bounded to compatible major versions.
+numpy>=1.24,<3
+certifi>=2023.7.22,<2026
 rasterio>=1.3,<2
 netCDF4>=1.6,<2
+pyproj>=3.5,<4
+earthengine-api>=0.1.390,<1

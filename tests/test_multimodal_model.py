@@ -10,12 +10,24 @@ Tests:
 from __future__ import annotations
 
 import unittest
+import json
+from pathlib import Path
 
+from src.model.config import TABULAR_FEATURES, validate_model_config
 from src.model.dataset import MultimodalEventSample
 from src.model.multimodal_model import MultimodalFlashFloodNet
 
 
 class TestMultimodalModel(unittest.TestCase):
+
+    def test_checked_in_config_matches_model_schema(self):
+        config_path = Path(__file__).parents[1] / "configs" / "model_config.json"
+        with config_path.open(encoding="utf-8") as config_file:
+            config = json.load(config_file)
+
+        validate_model_config(config)
+        self.assertEqual(config["tabular_branch"]["features"], TABULAR_FEATURES)
+        self.assertEqual(config["tabular_branch"]["input_dim"], len(TABULAR_FEATURES))
 
     def setUp(self):
         self.model = MultimodalFlashFloodNet(seed=42)

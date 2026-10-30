@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import re
 import os
+import ssl
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -57,6 +58,18 @@ class NOAAAWSGOESClient:
         self.resolution_km = resolution_km
         self.cache_directory = Path(cache_directory)
         self.cache_directory.mkdir(parents=True, exist_ok=True)
+        self.synthetic = False
+        self.simulation = False
+        try:
+            import certifi
+            self.ssl_context = ssl.create_default_context(cafile=certifi.where())
+        except ImportError:
+            ca_file = os.getenv("SSL_CERT_FILE")
+            self.ssl_context = (
+                ssl.create_default_context(cafile=ca_file)
+                if ca_file
+                else ssl.create_default_context()
+            )
 
     def query_nearest_image(
         self,
@@ -111,7 +124,9 @@ class NOAAAWSGOESClient:
         prefix = f"ABI-L2-MCMIPF/{year}/{day:03d}/{target_time.hour:02d}/"
         query = urllib.parse.urlencode({"list-type": "2", "prefix": prefix})
         _, bucket_url = self._satellite_for_time(target_time)
-        with urllib.request.urlopen(f"{bucket_url}/?{query}", timeout=60) as response:
+        with urllib.request.urlopen(
+            f"{bucket_url}/?{query}", timeout=60, context=self.ssl_context
+        ) as response:
             root = ET.fromstring(response.read())
         keys = [
             item.text
@@ -148,7 +163,10 @@ class NOAAAWSGOESClient:
         if partial.exists():
             partial.unlink()
         try:
-            urllib.request.urlretrieve(url, partial)
+            request = urllib.request.Request(url)
+            with urllib.request.urlopen(request, timeout=120, context=self.ssl_context) as response:
+                with open(partial, "wb") as output:
+                    output.write(response.read())
             from netCDF4 import Dataset
             with Dataset(partial):
                 pass

@@ -317,8 +317,9 @@ inventing values.
 ### Synthetic, fallback, or illustrative
 
 * `MockGHCNhGenerator` is synthetic.
-* `GEEClient._synthesize_patch` is synthetic; the repository does not prove a
-  real GOES trajectory for the Kerrville example.
+* `GEEClient._synthesize_patch` is synthetic. `GEEClient` can query a real
+  Earth Engine collection when authenticated and configured with a Cloud
+  project, but the checked-in Kerrville example does not prove that live path.
 * `DEMPipeline.synthesize_station_dem` is synthetic; the configured SRTM
   collection is not the same as a checked-in downloaded raster.
 * `src/data/mockPipelineData.ts` and the React pipeline logs are UI mock data.

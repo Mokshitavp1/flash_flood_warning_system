@@ -32,6 +32,7 @@ class StationTerrainFeatures:
     drainage_area_km2: float
     is_elevated_terrain: bool  # True when DEM-derived local relief exceeds the configured threshold
     relative_height_m: float = 0.0
+    synthetic: bool = False
 
     def to_feature_vector(self) -> List[float]:
         """Returns normalized 5D terrain feature vector for neural network branch (FR4.3)."""
@@ -64,14 +65,22 @@ class DEMPipeline:
         dem_loader: Optional[
             Callable[[StationMetadata], Tuple[List[List[float]], int, int]]
         ] = None,
+        routing_grid_loader: Optional[
+            Callable[
+                [StationMetadata, StationMetadata],
+                Tuple[List[List[float]], Tuple[int, int], Tuple[int, int]],
+            ]
+        ] = None,
     ):
         self.grid_radius_cells = grid_radius_cells
         self.cell_size_m = cell_size_m
         self.elevated_threshold_m = elevated_threshold_m
         self.dem_directory = Path(dem_directory)
         self.dem_loader = dem_loader
+        self.routing_grid_loader = routing_grid_loader
         self.router = D8FlowRouter(cell_size_m=cell_size_m)
         self.station_cache: Dict[str, StationTerrainFeatures] = {}
+        self.synthetic = dem_loader is not None
 
     def is_station_elevated(self, station_meta: StationMetadata) -> bool:
         """Return the DEM-derived local-relief gate for a station."""
@@ -210,6 +219,7 @@ class DEMPipeline:
             drainage_area_km2=drainage_km2,
             is_elevated_terrain=is_elevated,
             relative_height_m=relative_height_m,
+            synthetic=self.synthetic,
         )
 
         self.station_cache[st_id] = features
@@ -222,3 +232,89 @@ class DEMPipeline:
         dem, cr, cc = self.load_station_dem(station_meta)
         fdir_grid = self.router.compute_flow_direction(dem)
         return self.router.trace_downstream_path(fdir_grid, dem, cr, cc)
+
+    def load_common_routing_grid(
+        self, trigger: StationMetadata, candidate: StationMetadata
+    ) -> Tuple[List[List[float]], Tuple[int, int], Tuple[int, int]]:
+        """Load one DEM grid and both station cells in that shared coordinate system."""
+        if self.routing_grid_loader is not None:
+            return self.routing_grid_loader(trigger, candidate)
+
+        try:
+            import rasterio
+            from rasterio.windows import Window
+            from rasterio.warp import transform
+            from rasterio.transform import rowcol
+        except ImportError as exc:
+            raise RuntimeError("Shared DEM routing requires rasterio.") from exc
+
+        dem_files = sorted(
+            list(self.dem_directory.glob("*.tif"))
+            + list(self.dem_directory.glob("*.tiff"))
+        )
+        for dem_path in dem_files:
+            with rasterio.open(dem_path) as dataset:
+                if dataset.crs is None or not dataset.crs.is_projected:
+                    continue
+                x_values, y_values = transform(
+                    "EPSG:4326",
+                    dataset.crs,
+                    [trigger.longitude, candidate.longitude],
+                    [trigger.latitude, candidate.latitude],
+                )
+                cells = [
+                    rowcol(dataset.transform, x, y)
+                    for x, y in zip(x_values, y_values)
+                ]
+                min_row = min(cell[0] for cell in cells) - self.grid_radius_cells
+                max_row = max(cell[0] for cell in cells) + self.grid_radius_cells
+                min_col = min(cell[1] for cell in cells) - self.grid_radius_cells
+                max_col = max(cell[1] for cell in cells) + self.grid_radius_cells
+                if min_row < 0 or min_col < 0 or max_row >= dataset.height or max_col >= dataset.width:
+                    continue
+                window = Window(min_col, min_row, max_col - min_col + 1, max_row - min_row + 1)
+                values = dataset.read(1, window=window, masked=True)
+                if values.mask.any():
+                    continue
+                self.cell_size_m = abs(dataset.transform.a)
+                self.router = D8FlowRouter(cell_size_m=self.cell_size_m)
+                local_cells = [
+                    (row - min_row, col - min_col) for row, col in cells
+                ]
+                return values.astype(float).tolist(), local_cells[0], local_cells[1]
+        raise ValueError(
+            f"No common projected DEM coverage for stations "
+            f"{trigger.station_id} and {candidate.station_id}."
+        )
+
+    def trace_station_to_station(
+        self,
+        trigger: StationMetadata,
+        candidate: StationMetadata,
+        max_steps: int = 5000,
+    ) -> Optional[Dict[str, Any]]:
+        """Trace D8 flow and require candidate membership in trigger's catchment path."""
+        dem, trigger_cell, candidate_cell = self.load_common_routing_grid(trigger, candidate)
+        fdir = self.router.compute_flow_direction(dem)
+        path = self.router.trace_downstream_path(
+            fdir, dem, trigger_cell[0], trigger_cell[1], max_steps=max_steps
+        )
+        candidate_step = next(
+            (item for item in path if (item["row"], item["col"]) == candidate_cell),
+            None,
+        )
+        if candidate_step is None:
+            return None
+
+        catchment = self.router.upstream_cells(
+            fdir, candidate_cell[0], candidate_cell[1]
+        )
+        if trigger_cell not in catchment:
+            return None
+        return {
+            "distance_km": candidate_step["cumulative_dist_km"],
+            "flow_path_steps": candidate_step["step"],
+            "trigger_cell": trigger_cell,
+            "candidate_cell": candidate_cell,
+            "path": path,
+        }

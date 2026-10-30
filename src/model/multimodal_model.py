@@ -1,4 +1,4 @@
-"""Multimodal Flash-Flood Early Warning Neural Architecture.
+"""Deterministic pure-Python multimodal inference prototype.
 
 Implements Functional Requirements:
 - FR4.1: CNN frame encoder + temporal sequence model with explicit missing-frame mask.
@@ -6,6 +6,9 @@ Implements Functional Requirements:
 - FR4.3: Static terrain feature branch (MLP).
 - FR4.4: Fusion head combining all branches into a calibrated flood risk score [0, 1].
 - FR4.5: Explicit missing-frame masking (no zero-imputation or forward-filling).
+
+This class uses deterministic initialized weights and is not a trained model.
+Use ``src.model.training.LearnedRiskModel`` for SGD training and checkpoints.
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ import math
 import random
 from typing import Any, Dict, List, Optional, Tuple
 
+from src.model.config import validate_model_config
 from src.model.dataset import MultimodalEventSample
 
 
@@ -193,7 +197,21 @@ class MultimodalFlashFloodNet:
         terrain_hidden_dim: int = 16,
         fusion_hidden_dim: int = 32,
         seed: int = 42,
+        config: Optional[Dict[str, Any]] = None,
     ):
+        if config is not None:
+            validate_model_config(config)
+            satellite_cfg = config["satellite_branch"]
+            tabular_cfg = config["tabular_branch"]
+            terrain_cfg = config["terrain_branch"]
+            satellite_channels = satellite_cfg["patch_channels"]
+            satellite_hidden_dim = satellite_cfg["frame_embedding_dim"]
+            tabular_in_features = tabular_cfg["input_dim"]
+            tabular_hidden_dim = tabular_cfg["rnn_hidden_dim"]
+            terrain_in_features = terrain_cfg["input_dim"]
+            terrain_hidden_dim = terrain_cfg["mlp_hidden_dims"][-1]
+            fusion_hidden_dim = config["fusion_head"]["fusion_hidden_dims"][0]
+
         self.spatial_cnn = PurePythonSpatialCNN(
             in_channels=satellite_channels, out_dim=satellite_hidden_dim, seed=seed
         )

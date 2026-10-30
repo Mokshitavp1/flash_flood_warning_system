@@ -30,6 +30,7 @@ class TrajectoryFrameManifestItem:
     patch_mean_ir: Optional[float] = None
     cloud_fraction: Optional[float] = None
     source_file_name: Optional[str] = None
+    synthetic: bool = False
 
     def __post_init__(self):
         if self.status not in ("ok", "missing"):
@@ -95,6 +96,7 @@ class MissingFrameManifest:
             "missing_frames": missing_count,
             "coverage_pct": coverage_pct,
             "station_coverage": station_coverage,
+            "synthetic": any(record.synthetic for record in self.records),
         }
 
     def verify_nfr1_integrity(self) -> Tuple[bool, List[str]]:
@@ -155,6 +157,7 @@ class MissingFrameManifest:
             "patch_mean_ir",
             "cloud_fraction",
             "source_file_name",
+            "synthetic",
         ]
 
         with open(target, "w", newline="", encoding="utf-8") as f:

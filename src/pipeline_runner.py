@@ -33,7 +33,13 @@ from src.evaluation.metrics import BinaryClassificationMetrics
 from src.ingestion.ghcnh_parser import GHCNhObservation, GHCNhParser, StationMetadata
 from src.ingestion.mock_ghcnh_generator import MockGHCNhGenerator
 from src.model.dataset import MultimodalEventSample, StationAnchoredFloodDataset
+from src.model.config import validate_model_config
 from src.model.multimodal_model import MultimodalFlashFloodNet
+from src.model.training import (
+    InsufficientTrainingDataError,
+    LearnedRiskModel,
+    prepare_training,
+)
 from src.terrain.dem_pipeline import DEMPipeline
 from src.trajectory.manifest import MissingFrameManifest
 from src.trajectory.noaa_aws_client import NOAAAWSGOESClient
@@ -56,7 +62,13 @@ class FlashFloodPipelineRunner:
     ):
         self.pipeline_config = self._load_json(pipeline_config_path)
         self.model_config = self._load_json(model_config_path)
+        validate_model_config(self.model_config)
         self.alert_config = self._load_json(alert_config_path)
+        self.synthetic_sources = {
+            "weather": False,
+            "satellite": False,
+            "terrain": False,
+        }
 
         # Output paths
         self.manifest_path = Path(self.pipeline_config["data_paths"]["manifest_path"])
@@ -96,7 +108,12 @@ class FlashFloodPipelineRunner:
             patch_size=sat_cfg["patch_size_pixels"],
             gee_client=satellite_client,
         )
-        self.model = MultimodalFlashFloodNet()
+        self.model = MultimodalFlashFloodNet(config=self.model_config)
+        self.learned_model: Optional[LearnedRiskModel] = None
+        self.training_report: Dict[str, Any] = {
+            "status": "not_started",
+            "evaluation_status": "not_started",
+        }
         self.alert_logger = AlertLogger()
         self.manifest = MissingFrameManifest()
 
@@ -125,6 +142,12 @@ class FlashFloodPipelineRunner:
             mock_files = mock_gen.write_mock_dataset(temp_mock_dir, num_hours=48)
             print(f"[Stage 1] Created {len(mock_files)} synthetic GHCNh PSV files in {temp_mock_dir}")
             ingested = self.parser.ingest_directory(temp_mock_dir)
+        self.synthetic_sources["weather"] = any(
+            meta.synthetic or any(observation.synthetic for observation in observations)
+            for meta, observations in ingested.values()
+        )
+        if self.synthetic_sources["weather"]:
+            print("[Stage 1] SYNTHETIC WEATHER: records are not real NOAA coverage.")
 
         start_time = datetime.fromisoformat(
             self.pipeline_config["time_range"]["start_date"].replace("Z", "+00:00")
@@ -199,10 +222,13 @@ class FlashFloodPipelineRunner:
 
         # Coverage inspection (FR2.5)
         cov_stats = self.manifest.compute_coverage_statistics()
+        self.synthetic_sources["satellite"] = self.trajectory_builder.gee_client.synthetic
+        cov_stats["synthetic"] = self.synthetic_sources["satellite"]
         print(f"[Stage 2] Generated {len(events_with_trajectories)} station-event trajectories.")
         print(f"[Stage 2] Manifest Frame Coverage:")
         print(f"  - Total Frames Queried: {cov_stats['total_frames']}")
-        print(f"  - Valid ('ok') Frames: {cov_stats['ok_frames']} ({cov_stats['coverage_pct']}%)")
+        coverage_label = "SYNTHETIC coverage (not real satellite coverage)" if cov_stats["synthetic"] else "Real coverage"
+        print(f"  - Valid ('ok') Frames: {cov_stats['ok_frames']} ({cov_stats['coverage_pct']}%) [{coverage_label}]")
         print(f"  - Missing Frames: {cov_stats['missing_frames']}")
 
         # Persist manifest to disk
@@ -229,6 +255,11 @@ class FlashFloodPipelineRunner:
         for st in stations:
             feat = self.dem_pipeline.extract_station_terrain(st)
             terrain_features[st.station_id] = feat
+        self.synthetic_sources["terrain"] = any(
+            feature.synthetic for feature in terrain_features.values()
+        )
+        if self.synthetic_sources["terrain"]:
+            print("[Stage 3] SYNTHETIC TERRAIN: results are not real DEM coverage.")
             print(
                 f"  - Station {st.station_id}: Elev={feat.elevation_m}m, Slope={feat.slope_degrees}°, "
                 f"Aspect={feat.aspect_degrees}°, FlowAccum={feat.flow_accumulation_cells} cells, "
@@ -240,7 +271,17 @@ class FlashFloodPipelineRunner:
         ))
         terrain_output.mkdir(parents=True, exist_ok=True)
         (terrain_output / "station_terrain.json").write_text(
-            json.dumps({station_id: feature.to_dict() for station_id, feature in terrain_features.items()}, indent=2),
+            json.dumps({
+                "synthetic": self.synthetic_sources["terrain"],
+                "coverage_notice": (
+                    "Synthetic terrain; not real DEM coverage."
+                    if self.synthetic_sources["terrain"] else "Real DEM coverage."
+                ),
+                "stations": {
+                    station_id: feature.to_dict()
+                    for station_id, feature in terrain_features.items()
+                },
+            }, indent=2),
             encoding="utf-8",
         )
         return terrain_features
@@ -256,19 +297,13 @@ class FlashFloodPipelineRunner:
 
         dataset = StationAnchoredFloodDataset()
         labels = load_flood_labels(self.labels_path) if self.labels_path.exists() else {}
-        use_event_labels = bool(labels) and any(
-            meta.station_id == "USW00012961" for meta, _, _, _ in events
-        )
+        labeled_events = 0
         for meta, obs, history, traj in events:
-            label_target = (
-                labeled_sample_target(labels, meta.station_id, obs.timestamp)
-                if use_event_labels
-                else None
-            )
-            if use_event_labels and (
-                meta.station_id != "USW00012961" or label_target is None
-            ):
+            label_target = labeled_sample_target(labels, meta.station_id, obs.timestamp)
+            if labels and label_target is None:
                 continue
+            if label_target is not None:
+                labeled_events += 1
             terrain = self.dem_pipeline.extract_station_terrain(meta)
             sample = StationAnchoredFloodDataset.create_sample(
                 station_meta=meta,
@@ -288,6 +323,11 @@ class FlashFloodPipelineRunner:
         high_risk_count = sum(1 for s in risk_scores if s >= 0.65)
         print(f"[Stage 4] Processed {len(dataset)} multimodal samples.")
         print(f"[Stage 4] Detected {high_risk_count} high-risk convective storm events (Risk >= 0.65).")
+        if labels:
+            print(
+                f"[Stage 4] Joined {labeled_events} labeled samples across "
+                f"{len({sample.station_id for sample in dataset.samples})} stations."
+            )
 
         return dataset, risk_scores
 
@@ -302,19 +342,31 @@ class FlashFloodPipelineRunner:
         print(f"STAGE 5: Downhill Alert Propagation & Terrain Comparison")
         print(f"Comparing Baseline v0 (Circular Buffer) vs Method v1 (DEM Flow Routing)")
 
+        thresholds = self.alert_config["thresholds"]
+        baseline_cfg = self.alert_config["baseline_v0_circular_buffer"]
+        flow_cfg = self.alert_config["method_v1_dem_flow_routing"]
         circ_engine = CircularBufferAlertEngine(
-            radius_km=self.alert_config["baseline_v0_circular_buffer"]["radius_km"],
-            elevated_threshold_m=self.alert_config["thresholds"]["elevated_station_min_elevation_m"],
-            trigger_risk_threshold=self.alert_config["thresholds"]["elevated_station_min_risk_trigger"],
+            radius_km=baseline_cfg["radius_km"],
+            elevated_threshold_m=thresholds["elevated_station_min_elevation_m"],
+            trigger_risk_threshold=thresholds["elevated_station_min_risk_trigger"],
             dem_pipeline=self.dem_pipeline,
+            decay_with_distance=baseline_cfg["decay_with_distance"],
+            synthetic=any(self.synthetic_sources.values()),
         )
 
         flow_engine = DEMFlowRoutingAlertEngine(
             dem_pipeline=self.dem_pipeline,
-            elevated_threshold_m=self.alert_config["thresholds"]["elevated_station_min_elevation_m"],
-            trigger_risk_threshold=self.alert_config["thresholds"]["elevated_station_min_risk_trigger"],
-            flow_decay_alpha=self.alert_config["method_v1_dem_flow_routing"]["flow_decay_alpha"],
-            accumulation_boost_beta=self.alert_config["method_v1_dem_flow_routing"]["accumulation_boost_beta"],
+            elevated_threshold_m=thresholds["elevated_station_min_elevation_m"],
+            trigger_risk_threshold=thresholds["elevated_station_min_risk_trigger"],
+            flow_decay_alpha=flow_cfg["flow_decay_alpha"],
+            accumulation_boost_beta=flow_cfg["accumulation_boost_beta"],
+            min_alert_strength=thresholds["downhill_min_alert_strength_to_warn"],
+            wave_speed_km_h=flow_cfg["hydraulic_wave_speed_m_per_s"] * 3.6,
+            max_reach_km=flow_cfg["max_downstream_distance_km"],
+            max_steps=flow_cfg["max_steps"],
+            min_lead_time_minutes=thresholds["downhill_warning_lead_time_min_minutes"],
+            max_lead_time_minutes=thresholds["downhill_warning_lead_time_max_minutes"],
+            synthetic=any(self.synthetic_sources.values()),
         )
 
         # Clear previous alerts
@@ -325,7 +377,7 @@ class FlashFloodPipelineRunner:
 
         # Run alerts for all high-risk events
         for sample, score in zip(dataset.samples, risk_scores):
-            if score >= 0.65 and sample.is_elevated_terrain:
+            if score >= thresholds["elevated_station_min_risk_trigger"] and sample.is_elevated_terrain:
                 trigger_meta = next((s for s in stations if s.station_id == sample.station_id), None)
                 if not trigger_meta:
                     continue
@@ -365,9 +417,22 @@ class FlashFloodPipelineRunner:
         return summary
 
     def run_stage_6_evaluation(
-        self, dataset: StationAnchoredFloodDataset, stations: List[StationMetadata]
+        self,
+        dataset: StationAnchoredFloodDataset,
+        stations: List[StationMetadata],
+        evaluation_dataset: Optional[StationAnchoredFloodDataset] = None,
     ) -> Dict[str, Any]:
         """Stage 6: Baseline benchmarking and 4-stage ablation (FR6.1–FR6.4)."""
+        if evaluation_dataset is None:
+            print(
+                "[Stage 6] Evaluation skipped: no event-disjoint held-out test split "
+                "is available. Training samples will not be evaluated."
+            )
+            return {
+                "evaluation_status": "skipped_no_held_out_test_split",
+                "reason": self.training_report.get("reason", "Training was not completed."),
+            }
+        dataset = evaluation_dataset
         print(f"\n==================================================")
         print(f"STAGE 6: Evaluation & Multi-Stage Ablation Benchmark")
         print(f"Baselines: Rainfall Threshold (>25mm/h) & NOAA Flash Flood Guidance (FFG)")
@@ -411,10 +476,57 @@ class FlashFloodPipelineRunner:
 
         # Export evaluation results to JSON
         eval_report_path = self.evaluation_dir / "ablation_benchmark_results.json"
-        harness.export_report_json(results, eval_report_path)
+        harness.export_report_json(
+            results, eval_report_path, synthetic=any(self.synthetic_sources.values())
+        )
         print(f"[Stage 6] Exported evaluation report to {eval_report_path}")
 
         return {k: v.to_dict() for k, v in results.items()}
+
+    def run_training_stage(
+        self, dataset: StationAnchoredFloodDataset
+    ) -> StationAnchoredFloodDataset:
+        """Train on event-disjoint data and return only the held-out test set."""
+        manifest_path = Path("outputs/training/event_split.json")
+        checkpoint_path = self.model_config["training"].get(
+            "checkpoint_path", "outputs/training/learned_risk_model.json"
+        )
+        training_cfg = self.model_config["training"]
+        try:
+            split = prepare_training(
+                dataset,
+                manifest_path=manifest_path,
+                minimum_events=training_cfg.get("minimum_events", 3),
+            )
+        except InsufficientTrainingDataError as exc:
+            self.training_report = {
+                "status": "not_trained",
+                "evaluation_status": "skipped_no_held_out_test_split",
+                "reason": str(exc),
+                "evaluated_sample_count": 0,
+            }
+            print(f"[Training] NOT STARTED: {exc}")
+            return StationAnchoredFloodDataset()
+
+        self.learned_model = LearnedRiskModel(
+            learning_rate=training_cfg["learning_rate"],
+            l2=training_cfg["l2"],
+        )
+        self.training_report = self.learned_model.fit(
+            split,
+            epochs=training_cfg["epochs"],
+            checkpoint_path=checkpoint_path,
+        )
+        self.training_report["status"] = "trained"
+        self.training_report["evaluation_status"] = "held_out_test_only"
+        self.training_report["train_sample_count"] = len(split.train)
+        self.training_report["validation_sample_count"] = len(split.validation)
+        self.training_report["test_sample_count"] = len(split.test)
+        print(
+            f"[Training] Completed event-disjoint train/validation/test flow: "
+            f"{len(split.train)}/{len(split.validation)}/{len(split.test)} samples."
+        )
+        return split.test
 
     def run_all(self, raw_data_dir: Optional[str] = None) -> Dict[str, Any]:
         """Executes complete end-to-end pipeline across all 6 stages."""
@@ -435,16 +547,36 @@ class FlashFloodPipelineRunner:
         # Stage 4
         dataset, risk_scores = self.run_stage_4_multimodal_inference(events)
 
+        # Train and select the held-out evaluation split before any evaluation.
+        held_out_test = self.run_training_stage(dataset)
+        if self.learned_model is not None:
+            risk_scores = [
+                self.learned_model.predict_proba(sample)
+                for sample in dataset.samples
+            ]
+            print("[Stage 4] Recomputed risk scores from the trained checkpoint for downstream alerts.")
+        else:
+            raise RuntimeError(
+                "A trained risk model is required for pipeline alerts. "
+                "Provide at least three event-disjoint labeled events containing both classes."
+            )
+
         # Stage 5
         alert_summary = self.run_stage_5_alert_propagation(dataset, risk_scores, stations)
 
         # Stage 6
-        eval_results = self.run_stage_6_evaluation(dataset, stations)
+        eval_results = self.run_stage_6_evaluation(
+            dataset, stations, evaluation_dataset=held_out_test if held_out_test.samples else None
+        )
 
         elapsed = round(time.time() - t0, 2)
         print(f"\n==================================================")
+        is_synthetic = any(self.synthetic_sources.values())
         print(f"PIPELINE EXECUTION COMPLETE in {elapsed}s")
-        print(f"All stages successfully verified and logged.")
+        print(
+            "SYNTHETIC DATA WARNING: coverage and results are not real-world coverage."
+            if is_synthetic else "All stages successfully verified and logged."
+        )
         print(f"==================================================\n")
 
         return {
@@ -454,6 +586,13 @@ class FlashFloodPipelineRunner:
             "manifest_coverage": self.manifest.compute_coverage_statistics(),
             "alert_summary": alert_summary,
             "ablation_results": eval_results,
+            "training": self.training_report,
+            "synthetic": is_synthetic,
+            "synthetic_sources": self.synthetic_sources,
+            "coverage_notice": (
+                "Synthetic data used; do not claim real weather, satellite, or terrain coverage."
+                if is_synthetic else "All source coverage is real."
+            ),
         }
 
 

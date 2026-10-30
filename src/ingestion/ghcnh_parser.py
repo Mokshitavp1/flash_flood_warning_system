@@ -12,6 +12,7 @@ from __future__ import annotations
 import csv
 import gzip
 import io
+import json
 import math
 import os
 from dataclasses import asdict, dataclass
@@ -48,6 +49,7 @@ class StationMetadata:
     latitude: float
     longitude: float
     elevation_m: float
+    synthetic: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -84,6 +86,7 @@ class GHCNhObservation:
     # The numeric precipitation fields remain None here; consumers may impute
     # zero only together with this flag.
     precip_missing: bool = False
+    synthetic: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -478,6 +481,11 @@ class GHCNhParser:
         dir_path = Path(directory_path)
         if not dir_path.exists():
             return {}
+        synthetic = False
+        metadata_path = dir_path / "synthetic_metadata.json"
+        if metadata_path.exists():
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            synthetic = metadata.get("synthetic") is True
 
         results: Dict[str, Tuple[StationMetadata, List[GHCNhObservation]]] = {}
         patterns = ["GHCNh_*.psv", "GHCNh_*.psv.gz", "*.psv", "*.psv.gz"]
@@ -488,6 +496,10 @@ class GHCNhParser:
         for file_path in sorted(set(found_files)):
             try:
                 meta, obs = self.parse_file(file_path)
+                if synthetic:
+                    meta.synthetic = True
+                    for observation in obs:
+                        observation.synthetic = True
                 results[meta.station_id] = (meta, obs)
             except Exception as e:
                 # Log or note error, continue scanning

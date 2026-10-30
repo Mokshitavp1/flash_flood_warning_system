@@ -36,15 +36,19 @@ class CircularBufferAlertEngine:
 
     def __init__(
         self,
-        radius_km: float = 25.0,
-        elevated_threshold_m: float = 2000.0,
-        trigger_risk_threshold: float = 0.65,
+        radius_km: float,
+        elevated_threshold_m: float,
+        trigger_risk_threshold: float,
         dem_pipeline: Optional[DEMPipeline] = None,
+        decay_with_distance: bool = False,
+        synthetic: bool = False,
     ):
         self.radius_km = radius_km
         self.elevated_threshold_m = elevated_threshold_m
         self.trigger_risk_threshold = trigger_risk_threshold
         self.dem_pipeline = dem_pipeline
+        self.decay_with_distance = decay_with_distance
+        self.synthetic = synthetic
 
     def evaluate_and_propagate(
         self,
@@ -59,11 +63,7 @@ class CircularBufferAlertEngine:
         propagates alerts to all candidate stations within radius_km.
         """
         # Check elevation and risk conditions
-        trigger_is_elevated = (
-            self.dem_pipeline.is_station_elevated(trigger_station)
-            if self.dem_pipeline
-            else trigger_station.elevation_m >= self.elevated_threshold_m
-        )
+        trigger_is_elevated = trigger_station.elevation_m >= self.elevated_threshold_m
         if not trigger_is_elevated:
             return []
         if trigger_risk_score < self.trigger_risk_threshold:
@@ -85,7 +85,8 @@ class CircularBufferAlertEngine:
             if dist_km <= self.radius_km:
                 is_downhill = candidate.elevation_m < trigger_station.elevation_m
                 # Naive distance decay
-                decayed_strength = trigger_risk_score * max(0.2, 1.0 - (dist_km / self.radius_km))
+                decay = max(0.2, 1.0 - (dist_km / self.radius_km))
+                decayed_strength = trigger_risk_score * decay if self.decay_with_distance else trigger_risk_score
                 # Naive lead time assuming 10 km/h flood propagation
                 est_lead_min = round((dist_km / 10.0) * 60.0, 1)
 
@@ -106,6 +107,7 @@ class CircularBufferAlertEngine:
                     dispatched_timestamp_utc=timestamp_utc,
                     flow_path_steps=0,
                     in_watershed=True if is_downhill else False,
+                    synthetic=self.synthetic,
                 )
                 alerts.append(alert)
                 if logger:
