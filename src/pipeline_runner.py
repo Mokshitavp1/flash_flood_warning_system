@@ -79,20 +79,22 @@ class FlashFloodPipelineRunner:
             ),
         )
         self.dem_pipeline = dem_pipeline or configured_dem_pipeline
-        configured_satellite_client = NOAAAWSGOESClient(
-            bands=self.pipeline_config["satellite"]["bands"],
-            patch_size=self.pipeline_config["satellite"]["patch_size_pixels"],
-            resolution_km=self.pipeline_config["satellite"]["spatial_resolution_km"],
-            cache_directory=self.pipeline_config["data_paths"].get(
-                "goes_cache_dir", "data/goes_cache"
-            ),
-        ) if self.pipeline_config["satellite"].get("source") == "NOAA_AWS" else None
+        sat_cfg = self.pipeline_config["satellite"]
+        if satellite_client is None and sat_cfg.get("source") == "NOAA_AWS":
+            satellite_client = NOAAAWSGOESClient(
+                bands=sat_cfg["bands"],
+                patch_size=sat_cfg["patch_size_pixels"],
+                resolution_km=sat_cfg["spatial_resolution_km"],
+                cache_directory=self.pipeline_config["data_paths"].get(
+                    "goes_cache_dir", "data/goes_cache"
+                ),
+            )
         self.trajectory_builder = SatelliteTrajectoryBuilder(
-            window_hours=self.pipeline_config["satellite"]["window_hours"],
-            step_minutes=self.pipeline_config["satellite"]["step_minutes"],
-            tolerance_minutes=self.pipeline_config["satellite"]["tolerance_minutes"],
-            patch_size=self.pipeline_config["satellite"]["patch_size_pixels"],
-            gee_client=satellite_client or configured_satellite_client,
+            window_hours=sat_cfg["window_hours"],
+            step_minutes=sat_cfg["step_minutes"],
+            tolerance_minutes=sat_cfg["tolerance_minutes"],
+            patch_size=sat_cfg["patch_size_pixels"],
+            gee_client=satellite_client,
         )
         self.model = MultimodalFlashFloodNet()
         self.alert_logger = AlertLogger()
@@ -169,7 +171,11 @@ class FlashFloodPipelineRunner:
         """Stage 2: Satellite trajectory construction with missing-frame manifest (FR2.1–FR2.5, NFR1)."""
         print(f"\n==================================================")
         print(f"STAGE 2: Constructing Station-Anchored Satellite Trajectories")
-        print(f"Satellite Source: {self.pipeline_config['satellite']['source']} (Window: ±2h, Cadence: 30m)")
+        sat = self.pipeline_config["satellite"]
+        print(
+            f"Satellite Source: {sat['source']} "
+            f"(Window: +/-{sat['window_hours']}h, Cadence: {sat['step_minutes']}m)"
+        )
 
         events_with_trajectories = []
 
@@ -388,10 +394,18 @@ class FlashFloodPipelineRunner:
         print("\n" + "=" * 95)
         print(f"{'Ablation Stage / Baseline':<40} | {'CSI':<7} | {'POD':<7} | {'FAR':<7} | {'F1':<7} | {'Status'}")
         print("-" * 95)
+        baseline_keys = ("baseline_rainfall", "baseline_noaa_ffg")
+        best_baseline_csi = max(
+            (results[k].csi for k in baseline_keys if k in results), default=0.0
+        )
         for key, res in results.items():
+            if key in baseline_keys:
+                status = "Baseline"
+            else:
+                status = "Beats baselines" if res.csi > best_baseline_csi else "Below baselines"
             print(
-                f"{res.stage_name:<40} | {res.csi:<7.3f} | {res.pod:<7.3f} | {res.far:<7.3f} | {res.f1_score:<7.3f} | Beat Baseline"
-                if res.csi > 0.40 else f"{res.stage_name:<40} | {res.csi:<7.3f} | {res.pod:<7.3f} | {res.far:<7.3f} | {res.f1_score:<7.3f} | Baseline"
+                f"{res.stage_name:<40} | {res.csi:<7.3f} | {res.pod:<7.3f} | "
+                f"{res.far:<7.3f} | {res.f1_score:<7.3f} | {status}"
             )
         print("=" * 95)
 
@@ -406,7 +420,7 @@ class FlashFloodPipelineRunner:
         """Executes complete end-to-end pipeline across all 6 stages."""
         t0 = time.time()
         print(f"\n>>> STARTING HYDROALERT PIPELINE EXECUTION <<<")
-        print(f"Local time: {datetime.now(timezone.utc).isoformat()}")
+        print(f"UTC time: {datetime.now(timezone.utc).isoformat()}")
 
         # Stage 1
         ingested = self.run_stage_1_ingestion(raw_data_dir=raw_data_dir)
