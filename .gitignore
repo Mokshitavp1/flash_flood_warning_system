@@ -19,3 +19,4 @@ data/*
 !data/goes_cache/
 data/dem_projected/*
 data/goes_cache/*
+data/dem/*.zip
