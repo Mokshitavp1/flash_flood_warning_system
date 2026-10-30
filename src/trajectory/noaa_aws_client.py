@@ -7,6 +7,7 @@ results for the trajectory mask.
 
 from __future__ import annotations
 
+import logging
 import re
 import os
 import urllib.parse
@@ -15,6 +16,8 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class NOAAAWSGOESClient:
@@ -46,18 +49,30 @@ class NOAAAWSGOESClient:
     ) -> Optional[Dict[str, Any]]:
         del storm_intensity
         target_time = target_time.astimezone(timezone.utc)
-        candidates = self._list_candidates(target_time)
-        if not candidates:
+        # Recoverable per-frame failures (network, corrupt file, patch off the
+        # raster edge) become an explicit None so the manifest marks the frame
+        # "missing" (NFR1). Missing-dependency RuntimeErrors are NOT caught:
+        # they are setup errors and must stay loud.
+        try:
+            candidates = self._list_candidates(target_time)
+            if not candidates:
+                return None
+            candidate = min(
+                candidates,
+                key=lambda item: abs((item["time"] - target_time).total_seconds()),
+            )
+            delta = abs((candidate["time"] - target_time).total_seconds())
+            if delta > tolerance_seconds:
+                return None
+            path = self._download(candidate["key"])
+            patch = self._read_patch(path, latitude, longitude)
+        except (OSError, ET.ParseError, ValueError) as exc:
+            logger.warning(
+                "GOES frame unavailable for %s at (%.3f, %.3f): %s: %s",
+                target_time.isoformat(), latitude, longitude,
+                type(exc).__name__, exc,
+            )
             return None
-        candidate = min(
-            candidates,
-            key=lambda item: abs((item["time"] - target_time).total_seconds()),
-        )
-        delta = abs((candidate["time"] - target_time).total_seconds())
-        if delta > tolerance_seconds:
-            return None
-        path = self._download(candidate["key"])
-        patch = self._read_patch(path, latitude, longitude)
         return {
             "satellite_id": "GOES-16",
             "collection": "NOAA AWS ABI-L2-MCMIPF",
