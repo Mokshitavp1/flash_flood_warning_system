@@ -103,6 +103,7 @@ export default function App() {
   const trajectoryFrames = pipelineData?.trajectoryFrames ?? [];
   const alerts = pipelineData?.alerts ?? [];
   const ablationScores = pipelineData?.ablationScores ?? [];
+  const peakCsi = ablationScores.reduce((peak, score) => Math.max(peak, score.csi), 0);
 
   const loadPipelineData = async () => {
     setLoadError(null);
@@ -431,7 +432,7 @@ export default function App() {
                           cy={simTimeMinutes < 50 ? 95 + (simTimeMinutes / 50) * 95 : 190}
                           r="5.5"
                           fill="#373D20"
-                          className="animate-ping"
+                          className={isSimPlaying ? 'animate-ping' : ''}
                         />
                       </g>
                     )}
@@ -450,17 +451,21 @@ export default function App() {
 
                   {/* Station Pins */}
                   {stations.map((station) => {
-                    let top = '50%';
-                    let left = '50%';
-                    if (station.id === 'USW00093037') { top = '26%'; left = '45%'; }
-                    else if (station.id === 'USW00023188') { top = '41%'; left = '48%'; }
-                    else if (station.id === 'USW00013019') { top = '58%'; left = '64%'; }
-                    else if (station.id === 'USW00004122') { top = '82%'; left = '23%'; }
-                    else if (station.id === 'USW00014023') { top = '15%'; left = '62%'; }
+                    const stationIndex = stations.indexOf(station);
+                    const markerPositions = [
+                      { top: '26%', left: '45%' },
+                      { top: '41%', left: '48%' },
+                      { top: '58%', left: '64%' },
+                      { top: '72%', left: '33%' },
+                      { top: '15%', left: '62%' },
+                    ];
+                    const position = markerPositions[stationIndex % markerPositions.length];
+                    const top = position.top;
+                    const left = position.left;
 
-                    const isTrigger = station.id === 'USW00093037';
-                    const isDownhillValley = station.id === 'USW00013019' || station.id === 'USW00004122';
-                    const isUphillAdjacent = station.id === 'USW00014023';
+                    const isTrigger = stationIndex === 0;
+                    const isDownhillValley = stationIndex > 0 && stationIndex < 4;
+                    const isUphillAdjacent = stationIndex === 4;
                     const isSelected = selectedStation.id === station.id;
 
                     const isAlerted =
@@ -944,7 +949,7 @@ export default function App() {
                   </p>
                 </div>
                 <div className="text-right font-mono text-xs text-[#766153]">
-                  Peak CSI: <strong className="text-[#373D20]">0.667 (+166% over FFG)</strong>
+                  Peak CSI: <strong className="text-[#373D20]">{peakCsi.toFixed(3)}</strong>
                 </div>
               </div>
 
@@ -980,10 +985,12 @@ export default function App() {
                           <td className="p-3">
                             {score.isBaseline ? (
                               <span className="text-[#766153] font-sans">Baseline</span>
-                            ) : (
+                            ) : score.csi > 0 || score.pod > 0 || score.f1 > 0 ? (
                               <span className="text-[#717744] font-semibold font-sans flex items-center gap-1">
                                 <Check className="w-3.5 h-3.5" /> Beats Target
                               </span>
+                            ) : (
+                              <span className="text-[#766153] font-sans">No detections</span>
                             )}
                           </td>
                         </tr>
@@ -1000,7 +1007,7 @@ export default function App() {
                     Contribution of Satellite Trajectories
                   </h4>
                   <p className="text-[#766153] leading-relaxed">
-                    Adding GOES-16 ABI convective trajectories lifted CSI from <strong>0.490</strong> to <strong>0.582</strong>. Explicit missing-frame masking prevents false alarms during satellite telemetry gaps.
+                    The current evaluation reports CSI from the persisted pipeline artifacts. Explicit missing-frame masking prevents false alarms during satellite telemetry gaps.
                   </p>
                 </div>
                 <div className="p-4 rounded border border-[#BCBD8B]/40 bg-[#F9FAF7] text-xs">
@@ -1008,7 +1015,7 @@ export default function App() {
                     Contribution of Downhill Flow Routing
                   </h4>
                   <p className="text-[#766153] leading-relaxed">
-                    Routing alerts along DEM flow paths achieved peak CSI of <strong>0.667</strong>, protecting downhill communities with zero local rain while eliminating uphill false alarms.
+                    Routing alerts along DEM flow paths is evaluated against the same labeled samples and reports its measured CSI above.
                   </p>
                 </div>
               </div>

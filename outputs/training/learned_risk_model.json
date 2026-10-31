@@ -1,0 +1,35 @@
+{
+  "checkpoint_version": 1,
+  "backend": "pure_python_logistic_sgd",
+  "feature_names": [
+    "tabular_mean_precipitation_1h",
+    "tabular_mean_precipitation_3h",
+    "tabular_mean_temperature",
+    "tabular_mean_relative_humidity",
+    "tabular_mean_station_pressure",
+    "tabular_mean_wind_speed",
+    "terrain_relative_height",
+    "terrain_slope",
+    "terrain_aspect",
+    "terrain_flow_accumulation",
+    "terrain_elevated_indicator",
+    "satellite_valid_frame_mean"
+  ],
+  "weights": [
+    0.0,
+    0.0,
+    -0.6398135122100322,
+    -0.5608568537421789,
+    -0.5762543330196268,
+    -0.15733119152705716,
+    -0.03032995747771602,
+    -0.04195498440721524,
+    -0.465787733137604,
+    -0.13049748274994233,
+    0.0,
+    -0.431130293830719
+  ],
+  "bias": -0.8743495911646623,
+  "learning_rate": 0.05,
+  "l2": 0.0001
+}

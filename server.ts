@@ -195,7 +195,11 @@ async function pipelineData() {
     await readJson(path.join(outputs, 'evaluation', 'ablation_benchmark_results.json')),
     'outputs/evaluation/ablation_benchmark_results.json',
   );
-  const ablationScores = Object.entries(evaluation).map(([stageId, rawValue]) => {
+  const results = requireRecord(
+    evaluation.results,
+    'ablation_benchmark_results.json.results',
+  );
+  const ablationScores = Object.entries(results).map(([stageId, rawValue]) => {
     const value = requireRecord(rawValue, `ablation_benchmark_results.json.${stageId}`);
     const metrics = isRecord(value.metrics) ? value.metrics : {};
     return {

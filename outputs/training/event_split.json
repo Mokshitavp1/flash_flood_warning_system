@@ -1,0 +1,17 @@
+{
+  "event_names": {
+    "train": [
+      "2025-07-03"
+    ],
+    "validation": [],
+    "test": [
+      "2025-07-04"
+    ]
+  },
+  "counts": {
+    "train": 1,
+    "validation": 0,
+    "test": 4
+  },
+  "status": "ready_for_model_training"
+}
